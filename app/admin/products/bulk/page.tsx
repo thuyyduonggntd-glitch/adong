@@ -139,7 +139,7 @@ function attachImages(products: ParsedProduct[], imageMap: Map<string, LocalImag
     const ordered: LocalImage[] = [];
     const used = new Set<string>();
 
-    const colorKeys = p.colors.length > 0 ? p.colors : [...byColor.keys()];
+    const colorKeys = p.colors.length > 0 ? p.colors : Array.from(byColor.keys());
     colorKeys.forEach(c => {
       const group = byColor.get(c) || byColor.get('__all__') || [];
       if (group.length > 0 && !used.has(group[0].blobUrl)) {

@@ -11,7 +11,7 @@ async function main() {
 
   // 모든 상품의 가격 정보 로드
   const products = await prisma.product.findMany({
-    select: { id: true, price: true, wholesalePrice: true, isOnSale: true, salePrice: true },
+    select: { id: true, price: true, wholesalePrice: true, isOnSale: true },
   });
   const productMap = new Map(products.map((p) => [p.id, p]));
 
@@ -25,9 +25,7 @@ async function main() {
     const product = productMap.get(item.productId);
     if (!product) continue;
 
-    const effectivePrice = (product.isOnSale && product.salePrice)
-      ? product.salePrice
-      : (product.wholesalePrice ?? item.price); // 도매가 없으면 기존 유지
+    const effectivePrice = product.wholesalePrice ?? item.price; // 도매가 없으면 기존 유지
 
     if (effectivePrice !== item.price) {
       await prisma.orderItem.update({ where: { id: item.id }, data: { price: effectivePrice } });

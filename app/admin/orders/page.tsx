@@ -121,7 +121,7 @@ function ProductCells({ product, brand, size, color, quantity, price }: {
   );
 }
 
-function ProductHeaders() {
+function ProductHeaders({ hasEdit }: { hasEdit?: boolean }) {
   return (
     <>
       <th className="px-3 py-3 text-left">브랜드</th>

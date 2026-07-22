@@ -239,70 +239,62 @@ export default function OrdersManagementPage() {
   /* ── 공통 ── */
   const [loading, setLoading] = useState(true);
 
-  /* ── 데이터 로드 ── */
-  const loadOrders = () => Promise.all([
-    fetch('/api/orders').then((r) => r.json()),
-    fetch('/api/orders/items?outOfStockOrUnshipped=1').then((r) => r.json()),
-    fetch('/api/cancel-policy').then((r) => r.json()),
-    fetch('/api/delivery-policy').then((r) => r.json()),
-  ]).then(([o, ousu, pol, delivPol]) => {
-    setOrders(Array.isArray(o) ? o : []);
-    setOusuItems(Array.isArray(ousu) ? ousu : []);
-    setCancelPolicy({ globalEnabled: pol.globalEnabled ?? false, cancelFrom: pol.cancelFrom ?? null, cancelTo: pol.cancelTo ?? null });
-    setDeliveryPolicy({ enabled: delivPol.enabled ?? false, fromTime: delivPol.fromTime ?? null, toTime: delivPol.toTime ?? null });
-  }).catch(() => {});
+  /* ── 데이터 로드 ──
+     기존에는 이 화면이 마운트될 때 서로 다른 API 8개를 동시에 호출했는데, 서버리스 환경에서는
+     API 라우트가 다르면 각각 별도로 콜드스타트/DB 커넥션을 맺어야 해서 오히려 느려진다.
+     /api/home/orders-data 하나로 합쳐서 서버 쪽에서 Promise.all로 처리하도록 바꿨다. */
+  const loadAll = () =>
+    fetch('/api/home/orders-data').then((r) => r.json()).then((d) => {
+      setOrders(Array.isArray(d.orders) ? d.orders : []);
+      setOusuItems(Array.isArray(d.ousuItems) ? d.ousuItems : []);
+      setCancelPolicy({
+        globalEnabled: d.cancelPolicy?.globalEnabled ?? false,
+        cancelFrom: d.cancelPolicy?.cancelFrom ?? null,
+        cancelTo: d.cancelPolicy?.cancelTo ?? null,
+      });
+      setDeliveryPolicy({
+        enabled: d.deliveryPolicy?.enabled ?? false,
+        fromTime: d.deliveryPolicy?.fromTime ?? null,
+        toTime: d.deliveryPolicy?.toTime ?? null,
+      });
+      setCancelledItems(Array.isArray(d.cancelledItems) ? d.cancelledItems : []);
 
-  const loadCancelled = () =>
-    fetch('/api/orders/items?cancelled=1').then((r) => r.json())
-      .then((data) => setCancelledItems(Array.isArray(data) ? data : []))
-      .catch(() => {});
+      const orderMapped: InboundOrderItem[] = Array.isArray(d.allArrivedItems)
+        ? d.allArrivedItems.map((it: any) => ({ ...it, deliveryRequestedAt: it.deliveryRequestedAt ?? null, _source: 'order' as const }))
+        : [];
+      const supplierMapped: SupplierItem[] = Array.isArray(d.inbound)
+        ? d.inbound.flatMap((ib: any) =>
+            ib.items.map((item: any) => ({
+              id: item.id, quantity: item.quantity, size: item.size, color: item.color,
+              arrivedAt: ib.arrivedAt, deliveryRequestedAt: item.deliveryRequestedAt ?? null,
+              name: item.name, brand: ib.brand, note: ib.note,
+              product: item.product ?? null, _source: 'supplier' as const,
+            }))
+          )
+        : [];
+      const merged = [...orderMapped, ...supplierMapped];
+      setInboundItems(merged);
+      if (merged.length > 0 && !openDate) {
+        const newest = merged.reduce((a, b) => a.arrivedAt > b.arrivedAt ? a : b).arrivedAt.slice(0, 10);
+        setOpenDate(newest);
+      }
 
-  const loadInbound = () => Promise.all([
-    fetch('/api/orders/items?allArrived=1').then((r) => r.json()),
-    fetch('/api/inbound').then((r) => r.json()),
-  ]).then(([orderItems, inbounds]) => {
-    const orderMapped: InboundOrderItem[] = Array.isArray(orderItems)
-      ? orderItems.map((it: any) => ({ ...it, deliveryRequestedAt: it.deliveryRequestedAt ?? null, _source: 'order' as const }))
-      : [];
-    const supplierMapped: SupplierItem[] = Array.isArray(inbounds)
-      ? inbounds.flatMap((ib: any) =>
-          ib.items.map((item: any) => ({
-            id: item.id, quantity: item.quantity, size: item.size, color: item.color,
-            arrivedAt: ib.arrivedAt, deliveryRequestedAt: item.deliveryRequestedAt ?? null,
-            name: item.name, brand: ib.brand, note: ib.note,
-            product: item.product ?? null, _source: 'supplier' as const,
-          }))
-        )
-      : [];
-    const merged = [...orderMapped, ...supplierMapped];
-    setInboundItems(merged);
-    if (merged.length > 0 && !openDate) {
-      const newest = merged.reduce((a, b) => a.arrivedAt > b.arrivedAt ? a : b).arrivedAt.slice(0, 10);
-      setOpenDate(newest);
-    }
-  }).catch(() => {});
-
-  const loadShipping = () =>
-    fetch('/api/shipping').then((r) => r.json())
-      .then((data) => setShippings(Array.isArray(data) ? data : []))
-      .catch(() => {});
+      setShippings(Array.isArray(d.shipping) ? d.shipping : []);
+    }).catch(() => {});
 
   useEffect(() => {
     if (status === 'unauthenticated') { router.push('/login?callbackUrl=/home/orders'); return; }
     if (status !== 'authenticated') return;
 
-    Promise.all([loadOrders(), loadCancelled(), loadInbound(), loadShipping()]).then(() => setLoading(false));
-    const timer = setInterval(() => { setNow(new Date()); loadOrders(); }, 60_000);
+    loadAll().then(() => setLoading(false));
+    const timer = setInterval(() => { setNow(new Date()); loadAll(); }, 60_000);
     return () => clearInterval(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
 
   const switchMain = (tab: MainTab) => {
     setMainTab(tab);
-    if (tab === 'orders')    loadOrders();
-    if (tab === 'cancelled') loadCancelled();
-    if (tab === 'inbound')   loadInbound();
-    if (tab === 'shipping')  loadShipping();
+    loadAll();
   };
 
   /* ── 주문내역 계산 ── */

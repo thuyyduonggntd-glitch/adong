@@ -13,7 +13,7 @@ interface Props {
     id: string;
     name: string;
     images: string[];
-    category: { name: string };
+    category: { name: string } | null;
     isOnSale?: boolean;
     saleType?: string | null;
     saleValue?: number | null;

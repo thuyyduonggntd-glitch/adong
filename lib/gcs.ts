@@ -1,24 +1,24 @@
 import { Storage } from '@google-cloud/storage';
 
 const BUCKET_NAME = process.env.GCS_BUCKET || 'kkumbb-images';
+const PROJECT_ID = process.env.GCS_PROJECT_ID || 'project-79c92a60-b909-49e6-b0c';
 
 let storage: Storage | null = null;
 
 function getStorage(): Storage {
   if (storage) return storage;
-
-  const projectId = process.env.GCS_PROJECT_ID;
-  const rawCredentials = process.env.GOOGLE_CLOUD_CREDENTIALS;
-  if (!projectId || !rawCredentials) {
-    throw new Error('GCS_PROJECT_ID / GOOGLE_CLOUD_CREDENTIALS 환경변수가 설정되지 않았습니다.');
-  }
-
-  const credentials = JSON.parse(rawCredentials);
-  storage = new Storage({ projectId, credentials });
+  
+  // Dùng Application Default Credentials (gcloud auth application-default login)
+  // Không cần JSON key file
+  storage = new Storage({ projectId: PROJECT_ID });
   return storage;
 }
 
-export async function uploadToGCS(buffer: Buffer, filename: string, contentType: string): Promise<string> {
+export async function uploadToGCS(
+  buffer: Buffer,
+  filename: string,
+  contentType: string
+): Promise<string> {
   const objectPath = `products/${filename}`;
   const bucket = getStorage().bucket(BUCKET_NAME);
   const file = bucket.file(objectPath);

@@ -81,6 +81,7 @@
   "products.typeFilter": "Төрлөөр хайх",
   "products.seasonFilter": "Улирлаар хайх",
   "products.empty": "Тохирох бүтээгдэхүүн олдсонгүй.",
+  "products.loginToSeeMore": "Илүү олон бүтээгдэхүүн харахын тулд нэвтэрнэ үү.",
   "products.count": "{{count}} бүтээгдэхүүн",
   "products.titleAll": "Бүх бүтээгдэхүүн",
   "products.titleBrand": "{{brand}}",

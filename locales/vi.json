@@ -81,6 +81,7 @@
   "products.typeFilter": "Tìm theo loại",
   "products.seasonFilter": "Tìm theo mùa",
   "products.empty": "Không tìm thấy sản phẩm nào.",
+  "products.loginToSeeMore": "Đăng nhập để xem thêm sản phẩm.",
   "products.count": "{{count}} sản phẩm",
   "products.titleAll": "Tất cả sản phẩm",
   "products.titleBrand": "{{brand}}",

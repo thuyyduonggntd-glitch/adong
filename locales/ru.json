@@ -81,6 +81,7 @@
   "products.typeFilter": "Поиск по типу",
   "products.seasonFilter": "Поиск по сезону",
   "products.empty": "Товары не найдены.",
+  "products.loginToSeeMore": "Войдите, чтобы увидеть больше товаров.",
   "products.count": "{{count}} товаров",
   "products.titleAll": "Все товары",
   "products.titleBrand": "{{brand}}",

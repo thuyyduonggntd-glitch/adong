@@ -81,6 +81,7 @@
   "products.typeFilter": "Buscar por tipo",
   "products.seasonFilter": "Buscar por temporada",
   "products.empty": "No se encontraron productos.",
+  "products.loginToSeeMore": "Inicia sesión para ver más productos.",
   "products.count": "{{count}} productos",
   "products.titleAll": "Todos los productos",
   "products.titleBrand": "{{brand}}",

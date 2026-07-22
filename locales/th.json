@@ -81,6 +81,7 @@
   "products.typeFilter": "ค้นหาตามประเภท",
   "products.seasonFilter": "ค้นหาตามฤดูกาล",
   "products.empty": "ไม่พบสินค้าที่ค้นหา",
+  "products.loginToSeeMore": "เข้าสู่ระบบเพื่อดูสินค้าเพิ่มเติม",
   "products.count": "{{count}} รายการ",
   "products.titleAll": "สินค้าทั้งหมด",
   "products.titleBrand": "{{brand}}",

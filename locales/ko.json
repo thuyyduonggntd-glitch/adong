@@ -81,6 +81,7 @@
   "products.typeFilter": "종류별 검색",
   "products.seasonFilter": "시즌별 검색",
   "products.empty": "해당 상품이 없습니다.",
+  "products.loginToSeeMore": "로그인 후 더 많은 상품을 볼 수 있습니다.",
   "products.count": "{{count}}개 상품",
   "products.titleAll": "전체 상품",
   "products.titleBrand": "{{brand}} 브랜드",

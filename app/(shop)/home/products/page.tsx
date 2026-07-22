@@ -116,6 +116,9 @@ export default async function ProductsPage({ searchParams }: Props) {
   const grade  = (session?.user as any)?.dealerGrade ?? 'REGULAR';
   const userId = (session?.user as any)?.id as string | undefined;
 
+  // 비회원은 1페이지까지만 볼 수 있고, 2페이지 이상은 로그인이 필요하다.
+  const isGuestGated = !session && page > 1;
+
   const wishlistIds = userId
     ? new Set((await prisma.wishlist.findMany({ where: { userId }, select: { productId: true } })).map((w) => w.productId))
     : new Set<string>();
@@ -241,7 +244,15 @@ export default async function ProductsPage({ searchParams }: Props) {
 
         {/* 상품 그리드 */}
         <div className="flex-1">
-          {products.length === 0 ? (
+          {isGuestGated ? (
+            <div className="text-center py-20 text-slate-400">
+              <div className="text-5xl mb-4">🔒</div>
+              <p className="mb-4"><T k="products.loginToSeeMore" /></p>
+              <Link href={`/login?callbackUrl=${encodeURIComponent(buildPageHref(page))}`} className="btn-primary inline-block px-6">
+                <T k="nav.login" />
+              </Link>
+            </div>
+          ) : products.length === 0 ? (
             <div className="text-center py-20 text-slate-400">
               <div className="text-5xl mb-4">😢</div>
               <p><T k="products.empty" /></p>

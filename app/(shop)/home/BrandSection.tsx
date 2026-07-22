@@ -116,6 +116,7 @@ export default function BrandSection({
                   src={brand.image ?? '/brand-default.svg'}
                   alt={brand.name}
                   fill
+                  sizes="(max-width: 640px) 33vw, (max-width: 768px) 25vw, 20vw"
                   className="object-contain p-3 group-hover:scale-105 transition-transform duration-300"
                 />
               </div>

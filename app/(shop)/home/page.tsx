@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Suspense } from 'react';
 import { unstable_cache } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
@@ -33,32 +34,42 @@ const getAllBrands = unstable_cache(
   { revalidate: 60 }
 );
 
-async function getHomeData() {
-  // grade는 표시할 가격만 고르는 데 쓰이므로(순수 계산) 쿼리 자체는 grade와 무관하게 실행 가능 —
-  // 세션 조회와 병렬로 돌려 왕복 시간을 겹친다.
-  const [products, topBrands, allBrands] = await Promise.all([
+// 홈 화면 카드에 실제로 쓰이는 필드만 select — description/material/sizeImages 등
+// 번역 텍스트를 포함한 무거운 컬럼들을 응답에서 제외해 전송량을 줄인다.
+const HOME_PRODUCT_SELECT = {
+  id: true, name: true,
+  name_en: true, name_vi: true, name_th: true, name_ru: true, name_mn: true, name_es: true,
+  images: true, price: true, isOnSale: true, saleType: true, saleValue: true, updatedAt: true,
+  category: {
+    select: {
+      name: true,
+      name_en: true, name_vi: true, name_th: true, name_ru: true, name_mn: true, name_es: true,
+    },
+  },
+  prices: { select: { grade: true, price: true } },
+} as const;
+
+/* 브랜드 섹션은 세션과 무관 — 캐싱된 쿼리라 거의 즉시 렌더링되고, 나머지와 별도로 스트리밍된다. */
+async function HomeBrandSection() {
+  const [topBrands, allBrands] = await Promise.all([getTopBrands(), getAllBrands()]);
+  if (topBrands.length === 0 && allBrands.length === 0) return null;
+  return <BrandSection topBrands={topBrands} allBrands={allBrands} />;
+}
+
+/* 개인화(등급별 가격·찜 여부)가 필요한 부분만 별도 Suspense 경계로 분리해
+   세션 조회가 느려도 위쪽(검색창·브랜드 섹션)은 먼저 스트리밍되도록 한다. */
+async function HomeProductGrid() {
+  const [session, products] = await Promise.all([
+    getServerSession(authOptions),
     prisma.product.findMany({
       where: { isActive: true },
-      include: { category: true, prices: true },
+      select: HOME_PRODUCT_SELECT,
       orderBy: { createdAt: 'desc' },
       take: 8,
     }),
-    getTopBrands(),
-    getAllBrands(),
   ]);
-
-  return { products, topBrands, allBrands };
-}
-
-
-export default async function HomePage() {
-  // 세션 조회(내부 DB 재조회 포함)와 홈 데이터 조회를 동시에 실행해 왕복을 겹치게 한다.
-  const [session, { products, topBrands, allBrands }] = await Promise.all([
-    getServerSession(authOptions),
-    getHomeData(),
-  ]);
-  const grade   = (session?.user as any)?.dealerGrade ?? 'REGULAR';
-  const userId  = (session?.user as any)?.id as string | undefined;
+  const grade  = (session?.user as any)?.dealerGrade ?? 'REGULAR';
+  const userId = (session?.user as any)?.id as string | undefined;
 
   const productsWithPrice = products.map((product) => {
     const gradePrice = product.prices.find((p) => p.grade === (grade as any));
@@ -72,8 +83,41 @@ export default async function HomePage() {
     : new Set<string>();
 
   return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+      {productsWithPrice.map((product) => (
+        <ProductCard key={product.id} product={product as any} isWishlisted={wishlistIds.has(product.id)} />
+      ))}
+    </div>
+  );
+}
+
+function BrandSectionSkeleton() {
+  return (
+    <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-pulse">
+      <div className="h-5 w-40 bg-slate-100 rounded mb-4" />
+      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
+        {Array.from({ length: 10 }).map((_, i) => (
+          <div key={i} className="aspect-square bg-slate-100 rounded-xl" />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ProductGridSkeleton() {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 animate-pulse">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} className="aspect-square bg-slate-100 rounded-xl" />
+      ))}
+    </div>
+  );
+}
+
+export default function HomePage() {
+  return (
     <div>
-      {/* 검색창 */}
+      {/* 검색창 (정적, 데이터 의존 없음) */}
       <section className="bg-gradient-to-br from-primary-50 to-white py-10">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h1 className="text-2xl font-bold text-slate-800 mb-2"><T k="home.welcome" /></h1>
@@ -82,22 +126,20 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* 브랜드 섹션 (TOP 10 + A-Z 필터) */}
-      {(topBrands.length > 0 || allBrands.length > 0) && (
-        <BrandSection topBrands={topBrands} allBrands={allBrands} />
-      )}
+      {/* 브랜드 섹션 (TOP 10 + A-Z 필터) — 세션과 무관, 캐싱됨 */}
+      <Suspense fallback={<BrandSectionSkeleton />}>
+        <HomeBrandSection />
+      </Suspense>
 
-      {/* 신상품 */}
+      {/* 신상품 — 등급별 가격/찜 여부만 별도 스트리밍 */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-xl font-bold text-slate-800"><T k="home.newArrivals" /></h2>
           <Link href="/home/products" className="text-primary-600 text-sm font-medium hover:underline"><T k="home.viewAll" /></Link>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-          {productsWithPrice.map((product) => (
-            <ProductCard key={product.id} product={product as any} isWishlisted={wishlistIds.has(product.id)} />
-          ))}
-        </div>
+        <Suspense fallback={<ProductGridSkeleton />}>
+          <HomeProductGrid />
+        </Suspense>
       </section>
     </div>
   );

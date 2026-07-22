@@ -1124,7 +1124,7 @@ export default function OrdersManagementPage() {
                           {items.map((item) => (
                             <div key={item.id} className={`flex items-center gap-3 px-5 py-3 transition-colors ${item.deliveryRequestedAt ? 'bg-amber-50/40' : 'hover:bg-slate-50'}`}>
                               {item.product.images?.[0] && (
-                                <img src={item.product.images[0]} alt=""
+                                <Image src={item.product.images[0]} alt="" width={44} height={44}
                                   className="w-11 h-11 rounded-lg object-cover flex-shrink-0 border border-slate-100" />
                               )}
                               <div className="flex-1 min-w-0">
@@ -1187,7 +1187,7 @@ export default function OrdersManagementPage() {
                       {itemsForDate.map((item) => (
                         <div key={item.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50">
                           {item.product.images?.[0] && (
-                            <img src={item.product.images[0]} alt=""
+                            <Image src={item.product.images[0]} alt="" width={48} height={48}
                               className="w-12 h-12 rounded-lg object-cover flex-shrink-0 border border-slate-100" />
                           )}
                           <div className="flex-1 min-w-0">

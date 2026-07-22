@@ -67,6 +67,7 @@ export default function ProductCard({ product: rawProduct, isWishlisted = false,
           src={product.images[0] || 'https://placehold.co/400x400/EFF6FF/2563EB?text=상품'}
           alt={product.name}
           fill
+          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
           className="object-cover group-hover:scale-105 transition-transform duration-300"
         />
         <button onClick={handleWishlist} disabled={toggling} className="absolute top-2 right-2 p-1.5 bg-white rounded-full shadow-sm disabled:opacity-60" aria-label={t('nav.wishlistFull')}>

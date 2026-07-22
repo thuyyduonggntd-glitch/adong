@@ -51,16 +51,33 @@ const getCachedProductTypes = unstable_cache(
   { revalidate: 60 }
 );
 
+const PAGE_SIZE = 24;
+
+// 상품 그리드에 실제로 쓰이는 필드만 select — 대량 카탈로그에서 응답 크기를 줄인다.
+const PRODUCTS_LIST_SELECT = {
+  id: true, name: true,
+  name_en: true, name_vi: true, name_th: true, name_ru: true, name_mn: true, name_es: true,
+  images: true, price: true, isOnSale: true, saleType: true, saleValue: true, updatedAt: true,
+  category: {
+    select: {
+      name: true,
+      name_en: true, name_vi: true, name_th: true, name_ru: true, name_mn: true, name_es: true,
+    },
+  },
+  prices: { select: { grade: true, price: true } },
+} as const;
+
 interface Props {
   searchParams: {
     category?: string; q?: string; sort?: string; brand?: string;
     season?: string; productType?: string; isNew?: string; isOnSale?: string;
-    isCarryOver?: string;
+    isCarryOver?: string; page?: string;
   };
 }
 
 export default async function ProductsPage({ searchParams }: Props) {
   const { category, q, sort, brand, season, productType, isNew, isOnSale, isCarryOver } = searchParams;
+  const page = Math.max(1, Number(searchParams.page) || 1);
 
   const orderBy =
     sort === 'price_asc'  ? { price: 'asc'  as const } :
@@ -78,18 +95,23 @@ export default async function ProductsPage({ searchParams }: Props) {
   if (isCarryOver === '1') productConditions.push({ isCarryOver: true });
   if (isNew === '1')       productConditions.push({ createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } });
 
-  const [session, products, categories, seasons, productTypes, dbBrands] = await Promise.all([
+  const [session, products, totalCount, categories, seasons, productTypes, dbBrands] = await Promise.all([
     getServerSession(authOptions),
     prisma.product.findMany({
       where: { AND: productConditions },
-      include: { category: true, sizeCategory: true, prices: true },
+      select: PRODUCTS_LIST_SELECT,
       orderBy,
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
     }),
+    prisma.product.count({ where: { AND: productConditions } }),
     getCachedCategories(),
     getCachedSeasons(brand),
     getCachedProductTypes(brand),
     getCachedBrands(),
   ]);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   const grade  = (session?.user as any)?.dealerGrade ?? 'REGULAR';
   const userId = (session?.user as any)?.id as string | undefined;
@@ -102,12 +124,28 @@ export default async function ProductsPage({ searchParams }: Props) {
   const uniqueSeasons      = seasons.map((s) => s.season).filter(Boolean) as string[];
   const uniqueProductTypes = productTypes.map((p) => p.productType).filter(Boolean) as string[];
 
+  const buildPageHref = (p: number) => {
+    const params = new URLSearchParams();
+    if (category)    params.set('category', category);
+    if (q)            params.set('q', q);
+    if (sort)         params.set('sort', sort);
+    if (brand)        params.set('brand', brand);
+    if (season)       params.set('season', season);
+    if (productType)  params.set('productType', productType);
+    if (isNew)        params.set('isNew', isNew);
+    if (isOnSale)     params.set('isOnSale', isOnSale);
+    if (isCarryOver)  params.set('isCarryOver', isCarryOver);
+    if (p > 1)        params.set('page', String(p));
+    const qs = params.toString();
+    return `/home/products${qs ? `?${qs}` : ''}`;
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <ProductsPageHeader
         isNew={isNew} isOnSale={isOnSale} isCarryOver={isCarryOver} sort={sort}
         brand={brand} season={season} category={currentCategory} q={q}
-        count={products.length}
+        count={totalCount}
       />
 
       {/* 검색 + 정렬 */}
@@ -219,6 +257,23 @@ export default async function ProductsPage({ searchParams }: Props) {
                     isWishlisted={wishlistIds.has(product.id)} />
                 );
               })}
+            </div>
+          )}
+
+          {/* 페이지네이션 */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 mt-8">
+              <Link href={buildPageHref(Math.max(1, page - 1))}
+                aria-disabled={page === 1}
+                className={`px-3 py-1.5 rounded-lg text-sm border ${page === 1 ? 'pointer-events-none text-slate-300 border-slate-100' : 'text-slate-600 border-slate-200 hover:border-primary-400 hover:text-primary-600'}`}>
+                ‹
+              </Link>
+              <span className="text-sm text-slate-500 px-2">{page} / {totalPages}</span>
+              <Link href={buildPageHref(Math.min(totalPages, page + 1))}
+                aria-disabled={page === totalPages}
+                className={`px-3 py-1.5 rounded-lg text-sm border ${page === totalPages ? 'pointer-events-none text-slate-300 border-slate-100' : 'text-slate-600 border-slate-200 hover:border-primary-400 hover:text-primary-600'}`}>
+                ›
+              </Link>
             </div>
           )}
         </div>

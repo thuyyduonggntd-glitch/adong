@@ -6,6 +6,9 @@ import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import Pagination from '@/components/ui/Pagination';
+
+const PAGE_SIZE = 40;
 
 /* ════════════════════════════════════════
    공통 타입
@@ -216,12 +219,14 @@ export default function OrdersManagementPage() {
 
   /* ── 취소내역 상태 ── */
   const [cancelledItems, setCancelledItems] = useState<CancelledItem[]>([]);
+  const [cancelledPage, setCancelledPage] = useState(1);
 
   /* ── 입고내역 상태 ── */
   const [inboundItems, setInboundItems] = useState<UnifiedItem[]>([]);
   const [openDate, setOpenDate]         = useState<string | null>(null);
   const [requesting, setRequesting]     = useState<string | null>(null);
   const [inboundDateFilter, setInboundDateFilter] = useState('');
+  const [inboundPage, setInboundPage] = useState(1);
 
   /* ── 배송내역 상태 ── */
   const [shippings, setShippings]         = useState<ShippingEntry[]>([]);
@@ -229,6 +234,7 @@ export default function OrdersManagementPage() {
   const [selectedDate, setSelectedDate]     = useState<string | null>(null);
   const [openStorageDate, setOpenStorageDate] = useState<string | null>(null);
   const [storageRequesting, setStorageRequesting] = useState<string | null>(null);
+  const [shippingPage, setShippingPage] = useState(1);
 
   /* ── 공통 ── */
   const [loading, setLoading] = useState(true);
@@ -408,6 +414,14 @@ export default function OrdersManagementPage() {
     return inboundItems.filter((it) => { const t = new Date(it.arrivedAt).getTime(); return t >= d.getTime() && t <= dEnd.getTime(); });
   }, [inboundItems, inboundDateFilter]);
   const inboundGroups = useMemo(() => groupInboundByDate(filteredInbound), [filteredInbound]);
+  const inboundTotalPages = Math.max(1, Math.ceil(inboundGroups.length / PAGE_SIZE));
+  const pagedInboundGroups = useMemo(() => inboundGroups.slice((inboundPage - 1) * PAGE_SIZE, inboundPage * PAGE_SIZE), [inboundGroups, inboundPage]);
+  useEffect(() => { setInboundPage(1); }, [inboundDateFilter]);
+  useEffect(() => { setInboundPage((p) => Math.min(p, inboundTotalPages)); }, [inboundTotalPages]);
+
+  const cancelledTotalPages = Math.max(1, Math.ceil(cancelledItems.length / PAGE_SIZE));
+  const pagedCancelledItems = useMemo(() => cancelledItems.slice((cancelledPage - 1) * PAGE_SIZE, cancelledPage * PAGE_SIZE), [cancelledItems, cancelledPage]);
+  useEffect(() => { setCancelledPage((p) => Math.min(p, cancelledTotalPages)); }, [cancelledTotalPages]);
 
   /* ── 배송내역 계산 ── */
   const storageOrders = orders.filter(
@@ -417,6 +431,9 @@ export default function OrdersManagementPage() {
   const shippingList = shippings.filter((s) =>
     s.order.status === 'DELIVERED' || s.order.status === 'SHIPPING'
   );
+  const shippingTotalPages = Math.max(1, Math.ceil(shippingList.length / PAGE_SIZE));
+  const pagedShippingList = useMemo(() => shippingList.slice((shippingPage - 1) * PAGE_SIZE, shippingPage * PAGE_SIZE), [shippingList, shippingPage]);
+  useEffect(() => { setShippingPage((p) => Math.min(p, shippingTotalPages)); }, [shippingTotalPages]);
 
   const itemsForDate = selectedDate
     ? orders.flatMap((o) =>
@@ -749,7 +766,9 @@ export default function OrdersManagementPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {cancelledItems.map((item) => (
+            <Pagination page={cancelledPage} totalPages={cancelledTotalPages} onChange={setCancelledPage}
+              summary={t('orders.totalCount', { count: cancelledItems.length })} />
+            {pagedCancelledItems.map((item) => (
               <div key={item.id} className="card p-4 border-red-100 flex items-start gap-4">
                 <div className="relative w-14 h-14 rounded-lg overflow-hidden bg-slate-100 flex-shrink-0">
                   <Image src={item.product.images[0] || 'https://placehold.co/56x56'} alt={item.product.name} fill className="object-cover grayscale" />
@@ -773,6 +792,7 @@ export default function OrdersManagementPage() {
                 </div>
               </div>
             ))}
+            <Pagination page={cancelledPage} totalPages={cancelledTotalPages} onChange={setCancelledPage} />
           </div>
         )
       )}
@@ -806,7 +826,9 @@ export default function OrdersManagementPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {inboundGroups.map(({ date, label, items: dayItems }) => {
+              <Pagination page={inboundPage} totalPages={inboundTotalPages} onChange={setInboundPage}
+                summary={t('orders.totalCount', { count: inboundGroups.length })} />
+              {pagedInboundGroups.map(({ date, label, items: dayItems }) => {
                 const isOpen      = openDate === date;
                 const totalQty    = dayItems.reduce((s, i) => s + i.quantity, 0);
                 const totalAmt    = dayItems.reduce((s, i) => i._source === 'order' ? s + (i as InboundOrderItem).price * i.quantity : s, 0);
@@ -934,6 +956,7 @@ export default function OrdersManagementPage() {
                   </div>
                 );
               })}
+              <Pagination page={inboundPage} totalPages={inboundTotalPages} onChange={setInboundPage} />
             </div>
           )}
         </div>
@@ -970,7 +993,10 @@ export default function OrdersManagementPage() {
                 <p>{t('orders.empty.shipping')}</p>
               </div>
             ) : (
-              <div className="card overflow-x-auto">
+              <div>
+                <Pagination page={shippingPage} totalPages={shippingTotalPages} onChange={setShippingPage}
+                  summary={t('orders.totalCount', { count: shippingList.length })} />
+                <div className="card overflow-x-auto mt-2">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 border-b border-slate-100">
                     <tr className="text-left text-xs text-slate-400 uppercase">
@@ -985,7 +1011,7 @@ export default function OrdersManagementPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {shippingList.map((s) => {
+                    {pagedShippingList.map((s) => {
                       const productNames = s.order.items.map((i) => i.product.name).join(', ');
                       const arrivedAt    = s.order.items.find((i) => i.arrivedAt)?.arrivedAt;
                       return (
@@ -1020,6 +1046,8 @@ export default function OrdersManagementPage() {
                     })}
                   </tbody>
                 </table>
+                </div>
+                <Pagination page={shippingPage} totalPages={shippingTotalPages} onChange={setShippingPage} />
               </div>
             )
           )}

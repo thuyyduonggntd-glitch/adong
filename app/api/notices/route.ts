@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
   if (!session || !hasAdminAccess((session.user as any)?.role))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const notices = await prisma.notice.findMany({ orderBy: { createdAt: 'desc' } });
+  const notices = await prisma.notice.findMany({ orderBy: { createdAt: 'desc' }, take: 200 });
   return NextResponse.json(notices);
 }
 

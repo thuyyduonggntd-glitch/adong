@@ -21,7 +21,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       sizeCategory: true,
       prices: true,
       variants: true,
-      reviews: { include: { user: { select: { name: true } } }, orderBy: { createdAt: 'desc' } },
+      reviews: { include: { user: { select: { name: true } } }, orderBy: { createdAt: 'desc' }, take: 20 },
     },
   });
   if (!product) return NextResponse.json({ error: 'Not found' }, { status: 404 });

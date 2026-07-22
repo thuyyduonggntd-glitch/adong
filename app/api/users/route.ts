@@ -21,33 +21,36 @@ export async function GET(req: NextRequest) {
   }
 
   const q = searchParams.get('q');
-  const users = await prisma.user.findMany({
-    where: q ? {
-      OR: [
-        { name:  { contains: q, mode: 'insensitive' } },
-        { email: { contains: q, mode: 'insensitive' } },
-      ],
-    } : undefined,
-    select: {
-      id: true, name: true, email: true, phone: true, role: true, isActive: true,
-      dealerGrade: true,
-      shopName: true, businessNumber: true, shopSiteUrl: true, address: true, country: true,
-      shippingName: true, shippingPhone: true,
-      depositAmount: true, createdAt: true,
-      _count: { select: { orders: true } },
-      orders: {
-        where: { status: { in: ['CONFIRMED', 'SHIPPING', 'DELIVERED'] } },
-        select: { totalAmount: true },
-      },
-    },
-    orderBy: [{ role: 'asc' }, { createdAt: 'desc' }],
-  });
+  const where = q ? {
+    OR: [
+      { name:  { contains: q, mode: 'insensitive' as const } },
+      { email: { contains: q, mode: 'insensitive' as const } },
+    ],
+  } : undefined;
 
-  const result = users.map((u) => ({
-    ...u,
-    totalSales: u.orders.reduce((sum, o) => sum + o.totalAmount, 0),
-    orders: undefined,
-  }));
+  // 회원별 매출 합계는 주문을 전부 끌어와 JS에서 더하는 대신 DB에서 groupBy로 집계한다.
+  const [users, salesByUser] = await Promise.all([
+    prisma.user.findMany({
+      where,
+      select: {
+        id: true, name: true, email: true, phone: true, role: true, isActive: true,
+        dealerGrade: true,
+        shopName: true, businessNumber: true, shopSiteUrl: true, address: true, country: true,
+        shippingName: true, shippingPhone: true,
+        depositAmount: true, createdAt: true,
+        _count: { select: { orders: true } },
+      },
+      orderBy: [{ role: 'asc' }, { createdAt: 'desc' }],
+    }),
+    prisma.order.groupBy({
+      by: ['userId'],
+      where: { status: { in: ['CONFIRMED', 'SHIPPING', 'DELIVERED'] } },
+      _sum: { totalAmount: true },
+    }),
+  ]);
+
+  const salesMap = new Map(salesByUser.map((s) => [s.userId, s._sum.totalAmount ?? 0]));
+  const result = users.map((u) => ({ ...u, totalSales: salesMap.get(u.id) ?? 0 }));
 
   return NextResponse.json(result);
 }

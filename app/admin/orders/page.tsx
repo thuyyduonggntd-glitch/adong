@@ -846,6 +846,9 @@ export default function AdminOrdersPage() {
   const [search, setSearch]         = useState('');
   const [pendingPage, setPendingPage]     = useState(1);
   const [confirmedPage, setConfirmedPage] = useState(1);
+  const [dailyArrivedPage, setDailyArrivedPage] = useState(1);
+  const [inboundAllPage, setInboundAllPage]     = useState(1);
+  const [ousuPage, setOusuPage]                 = useState(1);
   const [inboundDateFilter, setInboundDateFilter]   = useState('');
   const [inboundBrandFilter, setInboundBrandFilter] = useState('');
   const [inboundIdFilter, setInboundIdFilter]       = useState('');
@@ -908,6 +911,7 @@ export default function AdminOrdersPage() {
   const pagedConfirmed = useMemo(() => filteredConfirmed.slice((confirmedPage - 1) * QUEUE_PAGE_SIZE, confirmedPage * QUEUE_PAGE_SIZE), [filteredConfirmed, confirmedPage]);
 
   useEffect(() => { setPendingPage(1); setConfirmedPage(1); }, [search]);
+  useEffect(() => { setInboundAllPage(1); }, [inboundDateFilter, inboundBrandFilter, inboundIdFilter]);
   // 일괄처리로 목록이 줄어들어 현재 페이지가 범위를 벗어나면 마지막 페이지로 보정
   useEffect(() => { setPendingPage((p) => Math.min(p, totalPendingPages)); }, [totalPendingPages]);
   useEffect(() => { setConfirmedPage((p) => Math.min(p, totalConfirmedPages)); }, [totalConfirmedPages]);
@@ -963,6 +967,12 @@ export default function AdminOrdersPage() {
     (!dailyIdFilter || it.order.user.name === dailyIdFilter) &&
     (!dailyBrandFilter || (it.product.brand || '-') === dailyBrandFilter)
   ), [todayArrivedItems, dailyIdFilter, dailyBrandFilter]);
+  const pagedTodayArrivedItems = useMemo(
+    () => filteredTodayArrivedItems.slice((dailyArrivedPage - 1) * QUEUE_PAGE_SIZE, dailyArrivedPage * QUEUE_PAGE_SIZE),
+    [filteredTodayArrivedItems, dailyArrivedPage]
+  );
+  useEffect(() => { setDailyArrivedPage(1); }, [dailyIdFilter, dailyBrandFilter]);
+  useEffect(() => { setDailyArrivedPage((p) => Math.min(p, Math.max(1, Math.ceil(filteredTodayArrivedItems.length / QUEUE_PAGE_SIZE)))); }, [filteredTodayArrivedItems.length]);
 
   const filteredTodayInbounds = useMemo(() => todayInbounds
     .map((ib) => ({
@@ -1083,11 +1093,15 @@ export default function AdminOrdersPage() {
     setSelected((s) => { const n = new Set(s); n.has(itemId) ? n.delete(itemId) : n.add(itemId); return n; });
   }, []);
 
+  const ousuTotalPages = Math.max(1, Math.ceil(outStockUnshippedItems.length / QUEUE_PAGE_SIZE));
+  const pagedOusu = useMemo(() => outStockUnshippedItems.slice((ousuPage - 1) * QUEUE_PAGE_SIZE, ousuPage * QUEUE_PAGE_SIZE), [outStockUnshippedItems, ousuPage]);
+  useEffect(() => { setOusuPage((p) => Math.min(p, ousuTotalPages)); }, [ousuTotalPages]);
+
   // 안전을 위해 "전체 선택"은 현재 페이지에 보이는 건만 대상으로 한다 (안 본 페이지의 주문이 실수로 함께 처리되는 것을 방지)
   const toggleAllPending   = useCallback(() => makeToggleAll(pagedPending.map((r) => r.itemId),             selected, setSelected)(), [pagedPending,            selected]);
   const toggleAllConfirmed = useCallback(() => makeToggleAll(pagedConfirmed.map((r) => r.itemId),           selected, setSelected)(), [pagedConfirmed,          selected]);
-  const toggleAllArrived   = useCallback(() => makeToggleAll(filteredTodayArrivedItems.map((it) => it.id), selected, setSelected)(), [filteredTodayArrivedItems, selected]);
-  const toggleAllOusu      = useCallback(() => makeToggleAll(outStockUnshippedItems.map((it) => it.id),    selected, setSelected)(), [outStockUnshippedItems,  selected]);
+  const toggleAllArrived   = useCallback(() => makeToggleAll(pagedTodayArrivedItems.map((it) => it.id),     selected, setSelected)(), [pagedTodayArrivedItems, selected]);
+  const toggleAllOusu      = useCallback(() => makeToggleAll(pagedOusu.map((it) => it.id),                  selected, setSelected)(), [pagedOusu,               selected]);
 
   /* ── 통합 액션 함수 ── */
 
@@ -1218,10 +1232,10 @@ export default function AdminOrdersPage() {
   const arrivedTotal = filteredTodayArrivedItems.reduce((s, it) => s + it.price * it.quantity, 0);
 
   /* 일별입고/품절미송 전체선택 체크 */
-  const allArrivedSel  = filteredTodayArrivedItems.length > 0 && filteredTodayArrivedItems.every((it) => selected.has(it.id));
-  const someArrivedSel = filteredTodayArrivedItems.some((it) => selected.has(it.id));
-  const allOusuSel     = outStockUnshippedItems.length > 0 && outStockUnshippedItems.every((it) => selected.has(it.id));
-  const someOusuSel    = outStockUnshippedItems.some((it) => selected.has(it.id));
+  const allArrivedSel  = pagedTodayArrivedItems.length > 0 && pagedTodayArrivedItems.every((it) => selected.has(it.id));
+  const someArrivedSel = pagedTodayArrivedItems.some((it) => selected.has(it.id));
+  const allOusuSel     = pagedOusu.length > 0 && pagedOusu.every((it) => selected.has(it.id));
+  const someOusuSel    = pagedOusu.some((it) => selected.has(it.id));
 
   return (
     <div className="pb-24">
@@ -1371,6 +1385,9 @@ export default function AdminOrdersPage() {
               {filteredTodayArrivedItems.length > 0 && (
                 <div>
                   <h3 className="text-sm font-semibold text-slate-700 mb-3">주문 상품 입고 ({filteredTodayArrivedItems.length}건)</h3>
+                  <QueuePagination page={dailyArrivedPage}
+                    totalPages={Math.max(1, Math.ceil(filteredTodayArrivedItems.length / QUEUE_PAGE_SIZE))}
+                    onChange={setDailyArrivedPage} totalCount={filteredTodayArrivedItems.length} label="전체:" />
                   <div className="card overflow-hidden">
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm min-w-max">
@@ -1388,7 +1405,7 @@ export default function AdminOrdersPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
-                          {filteredTodayArrivedItems.map((it) => (
+                          {pagedTodayArrivedItems.map((it) => (
                             <tr key={it.id} className={`hover:bg-slate-50 transition-colors ${selected.has(it.id) ? 'bg-primary-50/40' : ''}`}>
                               <td className="px-3 py-3">
                                 <input type="checkbox" checked={selected.has(it.id)} onChange={() => toggleRow(it.id)} className="w-4 h-4 accent-primary-600" />
@@ -1501,6 +1518,8 @@ export default function AdminOrdersPage() {
                 const allRows = inboundIdFilter ? allRowsRaw.filter((r) => r.userName === inboundIdFilter) : allRowsRaw;
                 const totalQty = allRows.reduce((s, r) => s + r.quantity, 0);
                 const totalAmt = allRows.reduce((s, r) => s + (r.price ?? 0) * r.quantity, 0);
+                const inboundAllTotalPages = Math.max(1, Math.ceil(allRows.length / QUEUE_PAGE_SIZE));
+                const pagedAllRows = allRows.slice((inboundAllPage - 1) * QUEUE_PAGE_SIZE, inboundAllPage * QUEUE_PAGE_SIZE);
 
                 const handleInboundPrint = () => {
                   if (allRows.length === 0) return;
@@ -1523,6 +1542,11 @@ export default function AdminOrdersPage() {
                         🖨 인쇄
                       </button>
                     </div>
+                    {inboundAllTotalPages > 1 && (
+                      <div className="px-3 py-2 border-b border-slate-100">
+                        <QueuePagination page={inboundAllPage} totalPages={inboundAllTotalPages} onChange={setInboundAllPage} totalCount={allRows.length} label="전체:" />
+                      </div>
+                    )}
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm min-w-max">
                         <thead className="bg-slate-50 border-b border-slate-100 text-xs text-slate-400 uppercase">
@@ -1542,7 +1566,7 @@ export default function AdminOrdersPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
-                          {allRows.map((row) => (
+                          {pagedAllRows.map((row) => (
                             <tr key={row.key} className={`transition-colors ${row.source === 'order' ? 'hover:bg-emerald-50/20' : 'hover:bg-blue-50/20'}`}>
                               <td className="px-3 py-3">
                                 {row.source === 'order'
@@ -1616,6 +1640,10 @@ export default function AdminOrdersPage() {
                 <div className="text-center py-12 text-slate-400">품절 또는 미송 처리된 상품이 없습니다.</div>
               ) : (
                 <div className="card overflow-hidden">
+                  <div className="p-3 border-b border-slate-100">
+                    <QueuePagination page={ousuPage} totalPages={ousuTotalPages} onChange={setOusuPage}
+                      totalCount={outStockUnshippedItems.length} label="전체:" />
+                  </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm min-w-max">
                       <thead className="bg-slate-50 border-b border-slate-100 text-xs text-slate-400 uppercase">
@@ -1634,7 +1662,7 @@ export default function AdminOrdersPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50">
-                        {outStockUnshippedItems.map((it) => {
+                        {pagedOusu.map((it) => {
                           const isOutOfStock = !!it.outOfStockAt;
                           return (
                             <tr key={it.id} className={`transition-colors ${isOutOfStock ? 'hover:bg-orange-50/20' : 'hover:bg-purple-50/20'} ${selected.has(it.id) ? 'bg-primary-50/40' : isOutOfStock ? 'bg-orange-50/30' : 'bg-purple-50/30'}`}>

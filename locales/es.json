@@ -278,6 +278,7 @@
   "orders.unitCount": "{{count}}",
   "orders.orderRef": "Pedido #{{id}} · {{date}}",
   "orders.badge.cancelled": "Cancelado",
+  "orders.totalCount": "Total {{count}}",
   "orders.inbound.subtitle": "Todos los productos entrantes (en almacén)",
   "orders.reset": "Restablecer",
   "orders.deliveryBanner.notNow": "Las solicitudes de envío no están disponibles ahora. Horario disponible: {{from}} ~ {{to}} (hora de Corea)",

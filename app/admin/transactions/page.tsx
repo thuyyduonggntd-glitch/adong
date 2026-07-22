@@ -1,6 +1,9 @@
 'use client';
 import { useEffect, useState, useMemo } from 'react';
 import { formatPrice, formatDate } from '@/lib/utils';
+import Pagination from '@/components/ui/Pagination';
+
+const PAGE_SIZE = 40;
 
 /* ─── 타입 ─── */
 type UserSummary = {
@@ -64,6 +67,7 @@ export default function AdminTransactionsPage() {
 
   /* 펼쳐진 회원 */
   const [openId, setOpenId] = useState<string | null>(null);
+  const [ledgerPage, setLedgerPage] = useState(1);
 
   /* 펼쳐진 회원의 데이터 캐시 */
   const [cache, setCache] = useState<Record<string, { orders: OrderEntry[]; txs: TxEntry[]; loaded: boolean }>>({});
@@ -108,6 +112,7 @@ export default function AdminTransactionsPage() {
     if (openId === userId) { setOpenId(null); return; }
     setOpenId(userId);
     setEditingTxId(null);
+    setLedgerPage(1);
     setTxForm((f) => ({ ...f, amount: '', description: '' }));
     await loadUserData(userId);
   };
@@ -191,6 +196,8 @@ export default function AdminTransactionsPage() {
             const isOpen      = openId === user.id;
             const data        = cache[user.id];
             const ledger      = data?.loaded ? buildLedger(data.orders, data.txs) : [];
+            const ledgerTotalPages = Math.max(1, Math.ceil(ledger.length / PAGE_SIZE));
+            const pagedLedger = isOpen ? ledger.slice((ledgerPage - 1) * PAGE_SIZE, ledgerPage * PAGE_SIZE) : [];
 
             return (
               <div key={user.id} className={`card overflow-hidden transition-shadow ${isOpen ? 'shadow-md' : ''}`}>
@@ -277,6 +284,11 @@ export default function AdminTransactionsPage() {
                     ) : ledger.length === 0 ? (
                       <div className="text-center py-8 text-slate-400 text-sm">거래 내역이 없습니다.</div>
                     ) : (
+                      <div>
+                      <div className="px-4 pt-3">
+                        <Pagination page={ledgerPage} totalPages={ledgerTotalPages} onChange={setLedgerPage}
+                          summary={`총 ${ledger.length}건`} />
+                      </div>
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm min-w-max">
                           <thead className="text-left text-xs text-slate-400 border-b border-slate-100 bg-white">
@@ -291,7 +303,7 @@ export default function AdminTransactionsPage() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-50">
-                            {ledger.map((row) => (
+                            {pagedLedger.map((row) => (
                               <tr key={row.key} className="hover:bg-slate-50 transition-colors text-slate-700">
 
                                 {/* 수정 중인 행 */}
@@ -400,6 +412,10 @@ export default function AdminTransactionsPage() {
                             </tr>
                           </tfoot>
                         </table>
+                      </div>
+                      <div className="px-4 pb-3">
+                        <Pagination page={ledgerPage} totalPages={ledgerTotalPages} onChange={setLedgerPage} />
+                      </div>
                       </div>
                     )}
                   </div>

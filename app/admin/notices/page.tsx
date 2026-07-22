@@ -1,5 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Pagination from '@/components/ui/Pagination';
+
+const PAGE_SIZE = 50;
 
 type Notice = {
   id: string;
@@ -29,12 +32,17 @@ export default function AdminNoticesPage() {
   const [content, setContent] = useState('');
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState('');
+  const [page, setPage]       = useState(1);
 
   const load = () => {
     fetch('/api/notices').then((r) => r.json()).then((d) => { setNotices(d); setLoading(false); });
   };
 
   useEffect(() => { load(); }, []);
+
+  const totalPages = Math.max(1, Math.ceil(notices.length / PAGE_SIZE));
+  useEffect(() => { setPage((p) => Math.min(p, totalPages)); }, [totalPages]);
+  const paged = notices.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,7 +113,8 @@ export default function AdminNoticesPage() {
         <div className="text-center py-16 text-slate-400">등록된 알림이 없습니다.</div>
       ) : (
         <div className="space-y-3">
-          {notices.map((notice) => (
+          <Pagination page={page} totalPages={totalPages} onChange={setPage} summary={`전체 ${notices.length}건`} />
+          {paged.map((notice) => (
             <div key={notice.id} className="card px-5 py-4 flex items-start gap-4">
               <span className={`flex-shrink-0 text-xs font-semibold px-2 py-1 rounded-lg ${typeStyle[notice.type]}`}>
                 {typeLabel[notice.type]}
@@ -125,6 +134,7 @@ export default function AdminNoticesPage() {
               </div>
             </div>
           ))}
+          <Pagination page={page} totalPages={totalPages} onChange={setPage} />
         </div>
       )}
     </div>

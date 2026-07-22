@@ -278,6 +278,7 @@
   "orders.unitCount": "{{count}}개",
   "orders.orderRef": "주문 #{{id}} · {{date}}",
   "orders.badge.cancelled": "취소됨",
+  "orders.totalCount": "총 {{count}}건",
   "orders.inbound.subtitle": "전체 입고 내역 (보관중)",
   "orders.reset": "초기화",
   "orders.deliveryBanner.notNow": "현재 배송 요청 가능 시간이 아닙니다. 배송 요청 가능 시간: {{from}} ~ {{to}} (한국시간 기준)",

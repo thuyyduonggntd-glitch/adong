@@ -2,6 +2,9 @@
 import { useEffect, useState, useMemo } from 'react';
 import Image from 'next/image';
 import { formatPrice } from '@/lib/utils';
+import Pagination from '@/components/ui/Pagination';
+
+const PAGE_SIZE = 50;
 
 /* ─── 보관중: 통합 아이템 ─── */
 type UnifiedItem = {
@@ -242,6 +245,16 @@ export default function AdminShippingPage() {
   const storedGroups    = useMemo(() => buildStoredUserGroups(storedItems),              [storedItems]);
   const deliveredGroups = useMemo(() => buildDeliveredUserGroups(shippings, supplierShipped), [shippings, supplierShipped]);
 
+  // 회원(그룹) 단위로 40개씩 페이지네이션
+  const [storedPage, setStoredPage]       = useState(1);
+  const [deliveredPage, setDeliveredPage] = useState(1);
+  const storedTotalPages    = Math.max(1, Math.ceil(storedGroups.length / PAGE_SIZE));
+  const deliveredTotalPages = Math.max(1, Math.ceil(deliveredGroups.length / PAGE_SIZE));
+  const pagedStoredGroups    = useMemo(() => storedGroups.slice((storedPage - 1) * PAGE_SIZE, storedPage * PAGE_SIZE), [storedGroups, storedPage]);
+  const pagedDeliveredGroups = useMemo(() => deliveredGroups.slice((deliveredPage - 1) * PAGE_SIZE, deliveredPage * PAGE_SIZE), [deliveredGroups, deliveredPage]);
+  useEffect(() => { setStoredPage((p) => Math.min(p, storedTotalPages)); }, [storedTotalPages]);
+  useEffect(() => { setDeliveredPage((p) => Math.min(p, deliveredTotalPages)); }, [deliveredTotalPages]);
+
   const withinDeliveryWindow = useMemo(() => {
     if (!deliveryPolicy.enabled || !deliveryPolicy.fromTime || !deliveryPolicy.toTime) return false;
     const nowKst = new Date(Date.now() + 9 * 60 * 60 * 1000);
@@ -407,7 +420,9 @@ export default function AdminShippingPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {storedGroups.map((userG) => {
+            <Pagination page={storedPage} totalPages={storedTotalPages} onChange={setStoredPage}
+              summary={`전체 회원 ${storedGroups.length}명`} />
+            {pagedStoredGroups.map((userG) => {
               const allIds    = userG.dateGroups.flatMap((d) => d.items.map((i) => i.selId));
               const allSel    = allIds.length > 0 && allIds.every((id) => selected.has(id));
               const someSel   = allIds.some((id) => selected.has(id));
@@ -548,6 +563,7 @@ export default function AdminShippingPage() {
                 </div>
               );
             })}
+            <Pagination page={storedPage} totalPages={storedTotalPages} onChange={setStoredPage} />
           </div>
         )}
         </>
@@ -562,7 +578,9 @@ export default function AdminShippingPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {deliveredGroups.map((userG) => {
+            <Pagination page={deliveredPage} totalPages={deliveredTotalPages} onChange={setDeliveredPage}
+              summary={`전체 회원 ${deliveredGroups.length}명`} />
+            {pagedDeliveredGroups.map((userG) => {
               const isOpen   = openDelUser === userG.userId;
               const totalRec = userG.orderDateGroups.reduce((s, d) => s + d.shippings.length, 0);
               const supCount = userG.supplierDateGroups.reduce((s, d) => s + d.items.length, 0);
@@ -773,6 +791,7 @@ export default function AdminShippingPage() {
                 </div>
               );
             })}
+            <Pagination page={deliveredPage} totalPages={deliveredTotalPages} onChange={setDeliveredPage} />
           </div>
         )
       )}

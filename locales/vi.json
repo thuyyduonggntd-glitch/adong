@@ -278,6 +278,7 @@
   "orders.unitCount": "{{count}}",
   "orders.orderRef": "Đơn #{{id}} · {{date}}",
   "orders.badge.cancelled": "Đã hủy",
+  "orders.totalCount": "Tổng {{count}}",
   "orders.inbound.subtitle": "Toàn bộ hàng về (đang lưu kho)",
   "orders.reset": "Đặt lại",
   "orders.deliveryBanner.notNow": "Hiện không phải giờ có thể yêu cầu giao hàng. Giờ cho phép: {{from}} ~ {{to}} (giờ Hàn Quốc)",

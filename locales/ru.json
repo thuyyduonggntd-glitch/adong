@@ -278,6 +278,7 @@
   "orders.unitCount": "{{count}}",
   "orders.orderRef": "Заказ #{{id}} · {{date}}",
   "orders.badge.cancelled": "Отменено",
+  "orders.totalCount": "Всего {{count}}",
   "orders.inbound.subtitle": "Все поступления (на складе)",
   "orders.reset": "Сбросить",
   "orders.deliveryBanner.notNow": "Сейчас запрос доставки недоступен. Доступное время: {{from}} ~ {{to}} (по времени Кореи)",

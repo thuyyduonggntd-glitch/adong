@@ -2,6 +2,9 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import { formatPrice } from '@/lib/utils';
+import Pagination from '@/components/ui/Pagination';
+
+const PAGE_SIZE = 40;
 
 type SaleProduct = {
   id: string; name: string; images: string[]; brand: string | null; colors: string[];
@@ -43,18 +46,26 @@ function CancelTable({
   onArrive: (ids: string[]) => void;
   emptyText: string;
 }) {
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const pagedItems = useMemo(() => items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [items, page]);
+  useEffect(() => { setPage((p) => Math.min(p, totalPages)); }, [totalPages]);
+
   if (items.length === 0) {
     return <p className="text-center py-8 text-slate-400 text-sm">{emptyText}</p>;
   }
 
-  const allSel  = items.every((it) => selected.has(it.id));
-  const someSel = items.some((it) => selected.has(it.id));
+  // 헤더 체크박스는 현재 페이지 기준 (안전을 위해 "전체 선택"은 페이지 단위로만 동작)
+  const allSel  = pagedItems.length > 0 && pagedItems.every((it) => selected.has(it.id));
+  const someSel = pagedItems.some((it) => selected.has(it.id));
+  // 일괄처리 대상은 여러 페이지에 걸쳐 직접 체크한 항목을 모두 포함
   const selIds  = items.filter((it) => selected.has(it.id)).map((it) => it.id);
   const totalQty = items.reduce((s, it) => s + it.quantity, 0);
   const totalAmt = items.reduce((s, it) => s + it.price * it.quantity, 0);
 
   return (
     <div>
+      <Pagination page={page} totalPages={totalPages} onChange={setPage} summary={`총 ${items.length}건`} />
       {selIds.length > 0 && (
         <div className="flex items-center gap-3 mb-3 flex-wrap">
           <span className="text-sm text-slate-500">{selIds.length}건 선택됨</span>
@@ -74,7 +85,7 @@ function CancelTable({
                 <th className="px-3 py-3">
                   <input type="checkbox" checked={allSel}
                     ref={(el) => { if (el) el.indeterminate = someSel && !allSel; }}
-                    onChange={() => onToggleAll(items.map((it) => it.id))}
+                    onChange={() => onToggleAll(pagedItems.map((it) => it.id))}
                     className="w-4 h-4 accent-primary-600" />
                 </th>
                 <th className="px-3 py-3 text-left">아이디</th>
@@ -93,7 +104,7 @@ function CancelTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {items.map((it) => {
+              {pagedItems.map((it) => {
                 const colorIdx = it.product.colors?.indexOf(it.color || '') ?? -1;
                 const imgSrc = (colorIdx >= 0 && it.product.images[colorIdx])
                   ? it.product.images[colorIdx]
@@ -171,6 +182,9 @@ function CancelTable({
             </tfoot>
           </table>
         </div>
+      </div>
+      <div className="mt-3">
+        <Pagination page={page} totalPages={totalPages} onChange={setPage} />
       </div>
     </div>
   );

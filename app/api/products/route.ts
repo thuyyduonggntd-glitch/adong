@@ -8,6 +8,31 @@ import { upsertBrandNotice } from '@/lib/notify';
 import { translateAndSaveProduct } from '@/lib/translate';
 import { buildProductSearchWhere } from '@/lib/productSearch';
 
+// 어드민 상품 목록에 실제로 쓰이는 필드만 — description/번역 텍스트 등 무거운 컬럼은 제외
+const ADMIN_PRODUCT_SELECT = {
+  id: true, name: true, price: true, stock: true, isActive: true,
+  images: true, brand: true, productNumber: true, season: true,
+  isOnSale: true, saleType: true, saleValue: true,
+  gender: true, productType: true, material: true, remark: true,
+  sizes: true, colors: true,
+  category: { select: { name: true } },
+  prices: { select: { grade: true, price: true } },
+} as const;
+
+// 고객용 목록에 실제로 쓰이는 필드만 — 번역 필드는 i18n 폴백을 위해 함께 포함
+const CUSTOMER_PRODUCT_SELECT = {
+  id: true, name: true,
+  name_en: true, name_vi: true, name_th: true, name_ru: true, name_mn: true, name_es: true,
+  images: true, price: true, isOnSale: true, saleType: true, saleValue: true, updatedAt: true,
+  category: {
+    select: {
+      name: true,
+      name_en: true, name_vi: true, name_th: true, name_ru: true, name_mn: true, name_es: true,
+    },
+  },
+  prices: { select: { grade: true, price: true } },
+} as const;
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const category  = searchParams.get('category');
@@ -32,7 +57,7 @@ export async function GET(req: NextRequest) {
 
   const products = await prisma.product.findMany({
     where,
-    include: { category: true, sizeCategory: true, prices: true },
+    select: admin === '1' ? ADMIN_PRODUCT_SELECT : CUSTOMER_PRODUCT_SELECT,
     orderBy: sort === 'price_asc' ? { price: 'asc' } : sort === 'price_desc' ? { price: 'desc' } : { createdAt: 'desc' },
   });
 

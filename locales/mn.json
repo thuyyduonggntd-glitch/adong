@@ -278,6 +278,7 @@
   "orders.unitCount": "{{count}}",
   "orders.orderRef": "Захиалга #{{id}} · {{date}}",
   "orders.badge.cancelled": "Цуцлагдсан",
+  "orders.totalCount": "Нийт {{count}}",
   "orders.inbound.subtitle": "Бүх ирсэн бараа (агуулахад байгаа)",
   "orders.reset": "Дахин тохируулах",
   "orders.deliveryBanner.notNow": "Одоо хүргэлт хүсэх боломжгүй цаг байна. Боломжтой цаг: {{from}} ~ {{to}} (Солонгосын цагаар)",

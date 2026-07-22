@@ -278,6 +278,7 @@
   "orders.unitCount": "{{count}}",
   "orders.orderRef": "คำสั่งซื้อ #{{id}} · {{date}}",
   "orders.badge.cancelled": "ยกเลิกแล้ว",
+  "orders.totalCount": "รวม {{count}} รายการ",
   "orders.inbound.subtitle": "สินค้าเข้าทั้งหมด (อยู่ในคลัง)",
   "orders.reset": "รีเซ็ต",
   "orders.deliveryBanner.notNow": "ขณะนี้ไม่ใช่เวลาที่สามารถขอจัดส่งได้ ช่วงเวลาที่ทำได้: {{from}} ~ {{to}} (เวลาเกาหลี)",

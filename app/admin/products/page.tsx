@@ -2,6 +2,9 @@
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { formatPrice, getSaleLabel, DEALER_GRADE_ORDER } from '@/lib/utils';
+import Pagination from '@/components/ui/Pagination';
+
+const PAGE_SIZE = 50;
 
 type GradePrice = { grade: string; price: number };
 type Product = {
@@ -19,6 +22,7 @@ export default function AdminProductsPage() {
   const [loading, setLoading]       = useState(true);
   const [search, setSearch]         = useState('');
   const [brandFilter, setBrandFilter] = useState('');
+  const [page, setPage] = useState(1);
   const [selected, setSelected]     = useState<Set<string>>(new Set());
   const [editRemark, setEditRemark] = useState<{ id: string; value: string } | null>(null);
 
@@ -96,11 +100,18 @@ export default function AdminProductsPage() {
     return matchQ && matchB;
   }), [products, search, brandFilter]);
 
-  const allSelected = filtered.length > 0 && filtered.every((p) => selected.has(p.id));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paged = useMemo(() => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [filtered, page]);
+
+  useEffect(() => { setPage(1); }, [search, brandFilter]);
+  useEffect(() => { setPage((p) => Math.min(p, totalPages)); }, [totalPages]);
+
+  // 안전을 위해 "전체 선택"은 현재 페이지에 보이는 항목만 대상으로 한다.
+  const allSelected = paged.length > 0 && paged.every((p) => selected.has(p.id));
 
   const toggleAll = () => {
-    if (allSelected) setSelected((prev) => { const next = new Set(prev); filtered.forEach((p) => next.delete(p.id)); return next; });
-    else setSelected((prev) => { const next = new Set(prev); filtered.forEach((p) => next.add(p.id)); return next; });
+    if (allSelected) setSelected((prev) => { const next = new Set(prev); paged.forEach((p) => next.delete(p.id)); return next; });
+    else setSelected((prev) => { const next = new Set(prev); paged.forEach((p) => next.add(p.id)); return next; });
   };
 
   const handleBulkSale = async () => {
@@ -186,7 +197,10 @@ export default function AdminProductsPage() {
         <div className="text-center py-16 text-slate-400">로딩 중...</div>
       ) : (
         <>
-          <p className="text-xs text-slate-400 mb-2">{filtered.length}개 상품</p>
+          <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+            <p className="text-xs text-slate-400">{filtered.length}개 상품</p>
+            <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+          </div>
           <div className="card overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-max">
@@ -210,7 +224,7 @@ export default function AdminProductsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {filtered.map((product) => (
+                  {paged.map((product) => (
                     <tr key={product.id} className={`text-slate-700 hover:bg-slate-50 ${selected.has(product.id) ? 'bg-primary-50/40' : ''}`}>
                       <td className="px-3 py-2">
                         <input type="checkbox" checked={selected.has(product.id)} onChange={() => toggleSelect(product.id)} className="w-4 h-4 accent-primary-600 cursor-pointer" />
@@ -306,6 +320,9 @@ export default function AdminProductsPage() {
                 </tbody>
               </table>
             </div>
+          </div>
+          <div className="mt-3">
+            <Pagination page={page} totalPages={totalPages} onChange={setPage} />
           </div>
         </>
       )}

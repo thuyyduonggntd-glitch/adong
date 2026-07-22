@@ -2,6 +2,9 @@
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { formatDate } from '@/lib/utils';
+import Pagination from '@/components/ui/Pagination';
+
+const PAGE_SIZE = 50;
 
 type QnA = {
   id: string; title: string; content: string; status: string;
@@ -22,6 +25,7 @@ export default function AdminQnAPage() {
   const [filter, setFilter]   = useState('ALL');
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [saving, setSaving]   = useState<string | null>(null);
+  const [page, setPage]       = useState(1);
 
   useEffect(() => {
     fetch('/api/qna').then((r) => r.json()).then((d) => { setList(d); setLoading(false); });
@@ -45,6 +49,10 @@ export default function AdminQnAPage() {
   };
 
   const filtered = filter === 'ALL' ? list : list.filter((q) => q.status === filter);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  useEffect(() => { setPage(1); }, [filter]);
+  useEffect(() => { setPage((p) => Math.min(p, totalPages)); }, [totalPages]);
 
   return (
     <div>
@@ -66,7 +74,8 @@ export default function AdminQnAPage() {
         <div className="text-center py-16 text-slate-400">문의가 없습니다.</div>
       ) : (
         <div className="space-y-3">
-          {filtered.map((item) => {
+          <Pagination page={page} totalPages={totalPages} onChange={setPage} summary={`전체 ${filtered.length}건`} />
+          {paged.map((item) => {
             const st = STATUS_MAP[item.status];
             const isOpen = expanded === item.id;
             return (
@@ -128,6 +137,7 @@ export default function AdminQnAPage() {
               </div>
             );
           })}
+          <Pagination page={page} totalPages={totalPages} onChange={setPage} />
         </div>
       )}
     </div>

@@ -278,6 +278,7 @@
   "orders.unitCount": "{{count}}",
   "orders.orderRef": "Order #{{id}} · {{date}}",
   "orders.badge.cancelled": "Cancelled",
+  "orders.totalCount": "{{count}} total",
   "orders.inbound.subtitle": "All Inbound Items (In Storage)",
   "orders.reset": "Reset",
   "orders.deliveryBanner.notNow": "Delivery requests are not available right now. Available hours: {{from}} ~ {{to}} (Korea time)",

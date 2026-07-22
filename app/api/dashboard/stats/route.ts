@@ -23,17 +23,25 @@ export async function GET() {
       where: { status: { in: ['CONFIRMED', 'SHIPPING', 'DELIVERED'] } },
     }),
     prisma.user.count({ where: { role: 'USER' } }),
+    // user 관계를 nested select로 같이 가져오면 Prisma가 행마다 별도 조회를 하는 경우가 있어
+    // userId만 가져오고 아래에서 한 번의 IN 쿼리로 따로 조회한다.
     prisma.order.findMany({
       where: { createdAt: { gte: cutoff } },
-      select: { createdAt: true, totalAmount: true, userId: true, user: { select: { name: true, depositAmount: true } } },
+      select: { createdAt: true, totalAmount: true, userId: true },
       orderBy: { createdAt: 'desc' },
     }),
     prisma.transaction.findMany({
       where: { date: { gte: cutoff }, type: 'DEPOSIT' },
-      select: { date: true, amount: true, description: true, userId: true, user: { select: { name: true, depositAmount: true } } },
+      select: { date: true, amount: true, description: true, userId: true },
       orderBy: { date: 'desc' },
     }),
   ]);
+
+  const involvedUserIds = Array.from(new Set([...recentOrders.map((o) => o.userId), ...deposits.map((t) => t.userId)]));
+  const involvedUsers = involvedUserIds.length > 0
+    ? await prisma.user.findMany({ where: { id: { in: involvedUserIds } }, select: { id: true, name: true, depositAmount: true } })
+    : [];
+  const userInfoMap = new Map(involvedUsers.map((u) => [u.id, u]));
 
   type DateEntry = { orderCount: number; orderAmount: number; deposit: number; descriptions: string[] };
   type UserEntry = { userName: string; balance: number; byDate: Map<string, DateEntry> };
@@ -48,13 +56,17 @@ export async function GET() {
   };
 
   for (const o of recentOrders) {
-    const entry = getDateEntry(o.userId, o.user.name, o.user.depositAmount, toKSTDate(o.createdAt));
+    const info = userInfoMap.get(o.userId);
+    if (!info) continue;
+    const entry = getDateEntry(o.userId, info.name, info.depositAmount, toKSTDate(o.createdAt));
     entry.orderCount++;
     entry.orderAmount += o.totalAmount;
   }
 
   for (const t of deposits) {
-    const entry = getDateEntry(t.userId, t.user.name, t.user.depositAmount, toKSTDate(t.date));
+    const info = userInfoMap.get(t.userId);
+    if (!info) continue;
+    const entry = getDateEntry(t.userId, info.name, info.depositAmount, toKSTDate(t.date));
     entry.deposit += t.amount;
     if (t.description) entry.descriptions.push(t.description);
   }

@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
     where: isAdmin ? undefined : { userId: (session.user as any).id },
     include: { user: { select: { name: true, email: true } } },
     orderBy: { createdAt: 'desc' },
+    take: 200,
   });
   return NextResponse.json(list);
 }

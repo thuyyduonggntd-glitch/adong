@@ -1,6 +1,9 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
+import Pagination from '@/components/ui/Pagination';
+
+const PAGE_SIZE = 50;
 
 type Brand = {
   id: string; name: string; image: string | null; createdAt: string;
@@ -33,6 +36,7 @@ export default function AdminBrandsPage() {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving]       = useState(false);
   const [error, setError]         = useState('');
+  const [page, setPage]           = useState(1);
 
   const addImageRef       = useRef<HTMLInputElement>(null);
   const addSizeImgRef     = useRef<HTMLInputElement>(null);
@@ -40,6 +44,10 @@ export default function AdminBrandsPage() {
   const editImageRef      = useRef<HTMLInputElement>(null);
   const editSizeImgRef    = useRef<HTMLInputElement>(null);
   const editModelImgRef   = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setPage((p) => Math.min(p, Math.max(1, Math.ceil(brands.length / PAGE_SIZE))));
+  }, [brands.length]);
 
   useEffect(() => {
     fetch('/api/brands').then((r) => r.json()).then((d) => { setBrands(d); setLoading(false); });
@@ -264,6 +272,9 @@ export default function AdminBrandsPage() {
     </div>
   );
 
+  const totalPages = Math.max(1, Math.ceil(brands.length / PAGE_SIZE));
+  const paged = brands.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
   return (
     <div>
       <h1 className="text-2xl font-bold text-slate-800 mb-6">브랜드 관리</h1>
@@ -281,7 +292,8 @@ export default function AdminBrandsPage() {
         <div className="text-center py-16 text-slate-400">등록된 브랜드가 없습니다.</div>
       ) : (
         <div className="space-y-3">
-          {brands.map((brand) => (
+          <Pagination page={page} totalPages={totalPages} onChange={setPage} summary={`전체 ${brands.length}개 브랜드`} />
+          {paged.map((brand) => (
             <div key={brand.id} className="card overflow-hidden">
               {editingId === brand.id ? (
                 <EditForm brand={brand} />
@@ -361,6 +373,7 @@ export default function AdminBrandsPage() {
               )}
             </div>
           ))}
+          <Pagination page={page} totalPages={totalPages} onChange={setPage} />
         </div>
       )}
     </div>

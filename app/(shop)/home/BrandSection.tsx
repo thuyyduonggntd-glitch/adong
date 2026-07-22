@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 type Brand = { id: string; name: string; image: string | null };
 
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+const ETC = 'ETC';
 
 export default function BrandSection({
   topBrands,
@@ -18,14 +19,18 @@ export default function BrandSection({
   const { t } = useTranslation();
   const [letter, setLetter] = useState<string | null>(null);
 
-  const filtered = letter
-    ? allBrands.filter((b) => b.name.toUpperCase().startsWith(letter))
-    : null;
+  const filtered = letter === ETC
+    ? allBrands.filter((b) => !ALPHABET.includes(b.name[0]?.toUpperCase()))
+    : letter
+      ? allBrands.filter((b) => b.name.toUpperCase().startsWith(letter))
+      : null;
 
   const displayBrands = filtered ?? topBrands;
   const isFiltered    = letter !== null;
+  const hasEtc = allBrands.some((b) => !ALPHABET.includes(b.name[0]?.toUpperCase()));
 
   const handleLetter = (l: string) => setLetter((prev) => (prev === l ? null : l));
+  const handleEtc = () => hasEtc && setLetter((prev) => (prev === ETC ? null : ETC));
 
   return (
     <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -34,7 +39,7 @@ export default function BrandSection({
         <h2 className="text-base font-bold text-slate-700 flex items-center gap-1.5">
           {isFiltered ? (
             <>
-              <span className="text-primary-600 font-mono text-lg">{letter}</span>
+              <span className="text-primary-600 font-mono text-lg">{letter === ETC ? t('brandFilter.etc') : letter}</span>
               <span className="text-slate-500 font-normal text-sm">{t('brandFilter.label')}</span>
               <span className="text-xs text-slate-400 font-normal ml-1">({filtered!.length})</span>
             </>
@@ -74,13 +79,24 @@ export default function BrandSection({
             </button>
           );
         })}
+        {/* 기타 (숫자·특수문자 등 A-Z로 시작하지 않는 브랜드) */}
+        <button onClick={handleEtc} disabled={!hasEtc}
+          className={`px-2 h-7 text-xs font-bold rounded transition-colors leading-none
+            ${letter === ETC
+              ? 'bg-primary-600 text-white'
+              : hasEtc
+                ? 'bg-white border border-slate-200 text-slate-600 hover:border-primary-400 hover:text-primary-600'
+                : 'bg-slate-50 text-slate-200 cursor-not-allowed border border-slate-100'
+            }`}>
+          {t('brandFilter.etc')}
+        </button>
       </div>
 
       {/* 브랜드 그리드 */}
       {isFiltered && filtered!.length === 0 ? (
         <div className="text-center py-10 text-slate-400 text-sm">
           <p className="text-3xl mb-2">🔍</p>
-          <p>{t('brandFilter.noResults', { letter })}</p>
+          <p>{t('brandFilter.noResults', { letter: letter === ETC ? t('brandFilter.etc') : letter })}</p>
         </div>
       ) : (
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">

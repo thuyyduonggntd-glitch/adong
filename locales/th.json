@@ -148,6 +148,7 @@
   "product.updated": "อัปเดต",
   "brandFilter.searchLabel": "ค้นหาแบรนด์",
   "brandFilter.noResults": "ไม่พบแบรนด์ที่ขึ้นต้นด้วย \"{{letter}}\"",
+  "brandFilter.etc": "อื่นๆ",
   "home.popularBrands": "TOP {{count}} แบรนด์ยอดนิยม",
   "home.clearFilter": "✕ ล้างตัวกรอง",
   "home.allProductsArrow": "สินค้าทั้งหมด →",

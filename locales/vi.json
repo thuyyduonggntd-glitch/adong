@@ -148,6 +148,7 @@
   "product.updated": "Cập nhật",
   "brandFilter.searchLabel": "Tìm thương hiệu",
   "brandFilter.noResults": "Không có thương hiệu nào bắt đầu bằng \"{{letter}}\".",
+  "brandFilter.etc": "Khác",
   "home.popularBrands": "TOP {{count}} thương hiệu phổ biến",
   "home.clearFilter": "✕ Bỏ lọc",
   "home.allProductsArrow": "Tất cả sản phẩm →",

@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 type Brand = { id: string; name: string; image: string | null };
 
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+const ETC = 'ETC';
 
 interface Props {
   brands: Brand[];
@@ -20,18 +21,26 @@ export default function BrandFilterAZ({ brands, activeBrand }: Props) {
   const [letter, setLetter] = useState<string | null>(() => {
     if (!activeBrand) return null;
     const first = activeBrand[0]?.toUpperCase();
-    return ALPHABET.includes(first) ? first : null;
+    return ALPHABET.includes(first) ? first : ETC;
   });
 
   const hasLetter = (l: string) => brands.some((b) => b.name.toUpperCase().startsWith(l));
+  const hasEtc = brands.some((b) => !ALPHABET.includes(b.name[0]?.toUpperCase()));
 
-  const filteredBrands = letter
-    ? brands.filter((b) => b.name.toUpperCase().startsWith(letter))
-    : [];
+  const filteredBrands = letter === ETC
+    ? brands.filter((b) => !ALPHABET.includes(b.name[0]?.toUpperCase()))
+    : letter
+      ? brands.filter((b) => b.name.toUpperCase().startsWith(letter))
+      : [];
 
   const handleLetter = (l: string) => {
     if (!hasLetter(l)) return;
     setLetter((prev) => (prev === l ? null : l));
+  };
+
+  const handleEtc = () => {
+    if (!hasEtc) return;
+    setLetter((prev) => (prev === ETC ? null : ETC));
   };
 
   return (
@@ -56,6 +65,17 @@ export default function BrandFilterAZ({ brands, activeBrand }: Props) {
             </button>
           );
         })}
+        {/* 기타 (숫자·특수문자 등 A-Z로 시작하지 않는 브랜드) */}
+        <button onClick={handleEtc} disabled={!hasEtc}
+          className={`px-2 h-7 text-xs font-bold rounded transition-colors leading-none
+            ${letter === ETC
+              ? 'bg-primary-600 text-white'
+              : hasEtc
+                ? 'bg-white border border-slate-200 text-slate-600 hover:border-primary-400 hover:text-primary-600'
+                : 'bg-slate-50 text-slate-200 cursor-not-allowed border border-slate-100'
+            }`}>
+          {t('brandFilter.etc')}
+        </button>
         {/* 선택 해제 */}
         {letter && (
           <button onClick={() => setLetter(null)}
@@ -68,7 +88,7 @@ export default function BrandFilterAZ({ brands, activeBrand }: Props) {
       {/* 브랜드 필터 결과 */}
       {letter && (
         filteredBrands.length === 0 ? (
-          <p className="text-xs text-slate-400 py-2">{t('brandFilter.noResults', { letter })}</p>
+          <p className="text-xs text-slate-400 py-2">{t('brandFilter.noResults', { letter: letter === ETC ? t('brandFilter.etc') : letter })}</p>
         ) : (
           <div className="flex flex-wrap gap-2 pb-1">
             {filteredBrands.map((b) => (

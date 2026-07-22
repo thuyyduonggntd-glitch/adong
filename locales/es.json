@@ -148,6 +148,7 @@
   "product.updated": "Actualizado",
   "brandFilter.searchLabel": "Buscar marca",
   "brandFilter.noResults": "No hay marcas que comiencen con \"{{letter}}\".",
+  "brandFilter.etc": "Otros",
   "home.popularBrands": "Top {{count}} marcas populares",
   "home.clearFilter": "✕ Quitar filtro",
   "home.allProductsArrow": "Todos los productos →",

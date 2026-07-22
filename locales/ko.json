@@ -148,6 +148,7 @@
   "product.updated": "수정",
   "brandFilter.searchLabel": "브랜드 검색",
   "brandFilter.noResults": "{{letter}}로 시작하는 브랜드가 없습니다.",
+  "brandFilter.etc": "기타",
   "home.popularBrands": "인기 브랜드 TOP {{count}}",
   "home.clearFilter": "✕ 필터 해제",
   "home.allProductsArrow": "전체 상품 →",

@@ -148,6 +148,7 @@
   "product.updated": "Шинэчилсэн",
   "brandFilter.searchLabel": "Брэнд хайх",
   "brandFilter.noResults": "\"{{letter}}\" үсгээр эхэлсэн брэнд олдсонгүй.",
+  "brandFilter.etc": "Бусад",
   "home.popularBrands": "ТОП {{count}} эрэлттэй брэнд",
   "home.clearFilter": "✕ Шүүлтүүр цэвэрлэх",
   "home.allProductsArrow": "Бүх бүтээгдэхүүн →",

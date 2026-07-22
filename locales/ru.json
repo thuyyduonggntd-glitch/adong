@@ -148,6 +148,7 @@
   "product.updated": "Обновлено",
   "brandFilter.searchLabel": "Поиск бренда",
   "brandFilter.noResults": "Бренды на \"{{letter}}\" не найдены.",
+  "brandFilter.etc": "Прочее",
   "home.popularBrands": "ТОП {{count}} популярных брендов",
   "home.clearFilter": "✕ Сбросить фильтр",
   "home.allProductsArrow": "Все товары →",

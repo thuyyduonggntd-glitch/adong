@@ -148,6 +148,7 @@
   "product.updated": "Updated",
   "brandFilter.searchLabel": "Search Brand",
   "brandFilter.noResults": "No brands starting with \"{{letter}}\".",
+  "brandFilter.etc": "Etc",
   "home.popularBrands": "Top {{count}} Popular Brands",
   "home.clearFilter": "✕ Clear Filter",
   "home.allProductsArrow": "All Products →",

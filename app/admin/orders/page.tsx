@@ -867,22 +867,13 @@ export default function AdminOrdersPage() {
   const [editItemRemark, setEditItemRemark] = useState<{ id: string; value: string } | null>(null);
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/orders?admin=1&status=PENDING').then((r) => r.json()),
-      fetch('/api/orders?admin=1&status=CONFIRMED').then((r) => r.json()),
-      fetch('/api/inbound?today=1').then((r) => r.json()),
-      fetch('/api/inbound').then((r) => r.json()),
-      fetch('/api/orders/items?arrivedToday=1').then((r) => r.json()),
-      fetch('/api/cancel-policy').then((r) => r.json()),
-      fetch('/api/orders/items?outOfStockOrUnshipped=1').then((r) => r.json()),
-      fetch('/api/orders/items?allArrived=1').then((r) => r.json()),
-    ]).then(([p, c, ti, ai, arrived, pol, ousu, allArrived]) => {
-      setPendingOrders(p); setConfirmedOrders(c);
-      setTodayInbounds(ti); setAllInbounds(ai);
-      setTodayArrivedItems(arrived);
-      setCancelPolicy({ globalEnabled: pol.globalEnabled ?? false, timeLimit: pol.timeLimit ?? null, cancelFrom: pol.cancelFrom ?? '', cancelTo: pol.cancelTo ?? '' });
-      setOutStockUnshippedItems(Array.isArray(ousu) ? ousu : []);
-      setAllArrivedOrderItems(Array.isArray(allArrived) ? allArrived : []);
+    fetch('/api/admin/orders-data').then((r) => r.json()).then((d) => {
+      setPendingOrders(d.pendingOrders); setConfirmedOrders(d.confirmedOrders);
+      setTodayInbounds(d.todayInbounds); setAllInbounds(d.allInbounds);
+      setTodayArrivedItems(d.todayArrivedItems);
+      setCancelPolicy({ globalEnabled: d.cancelPolicy.globalEnabled ?? false, timeLimit: d.cancelPolicy.timeLimit ?? null, cancelFrom: d.cancelPolicy.cancelFrom ?? '', cancelTo: d.cancelPolicy.cancelTo ?? '' });
+      setOutStockUnshippedItems(Array.isArray(d.outOfStockUnshippedItems) ? d.outOfStockUnshippedItems : []);
+      setAllArrivedOrderItems(Array.isArray(d.allArrivedOrderItems) ? d.allArrivedOrderItems : []);
       setLoading(false);
     });
   }, []);
@@ -1071,20 +1062,12 @@ export default function AdminOrdersPage() {
 
   /* ── 전체 데이터 리프레시 ── */
   const refreshData = useCallback(async () => {
-    const [p, c, ti, ai, arrived, ousu, allArrived] = await Promise.all([
-      fetch('/api/orders?admin=1&status=PENDING').then((r) => r.json()),
-      fetch('/api/orders?admin=1&status=CONFIRMED').then((r) => r.json()),
-      fetch('/api/inbound?today=1').then((r) => r.json()),
-      fetch('/api/inbound').then((r) => r.json()),
-      fetch('/api/orders/items?arrivedToday=1').then((r) => r.json()),
-      fetch('/api/orders/items?outOfStockOrUnshipped=1').then((r) => r.json()),
-      fetch('/api/orders/items?allArrived=1').then((r) => r.json()),
-    ]);
-    setPendingOrders(p); setConfirmedOrders(c);
-    setTodayInbounds(ti); setAllInbounds(ai);
-    setTodayArrivedItems(arrived);
-    setOutStockUnshippedItems(Array.isArray(ousu) ? ousu : []);
-    setAllArrivedOrderItems(Array.isArray(allArrived) ? allArrived : []);
+    const d = await fetch('/api/admin/orders-data').then((r) => r.json());
+    setPendingOrders(d.pendingOrders); setConfirmedOrders(d.confirmedOrders);
+    setTodayInbounds(d.todayInbounds); setAllInbounds(d.allInbounds);
+    setTodayArrivedItems(d.todayArrivedItems);
+    setOutStockUnshippedItems(Array.isArray(d.outOfStockUnshippedItems) ? d.outOfStockUnshippedItems : []);
+    setAllArrivedOrderItems(Array.isArray(d.allArrivedOrderItems) ? d.allArrivedOrderItems : []);
     setSelected(new Set());
   }, []);
 

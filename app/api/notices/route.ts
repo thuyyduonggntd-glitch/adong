@@ -15,8 +15,12 @@ export async function GET(req: NextRequest) {
     const userId = (session?.user as any)?.id;
     if (!userId) return NextResponse.json([]);
 
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { createdAt: true } });
+    if (!user) return NextResponse.json([]);
+
     const notices = await prisma.notice.findMany({
-      where: { isActive: true },
+      // 가입일 이전에 올라온 공지는 노출하지 않음 — 가입일 이후 공지만 대상
+      where: { isActive: true, createdAt: { gte: user.createdAt } },
       orderBy: { createdAt: 'desc' },
       include: { seenBy: { where: { userId }, select: { id: true } } },
     });

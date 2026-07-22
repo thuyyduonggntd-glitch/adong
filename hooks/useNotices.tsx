@@ -14,12 +14,12 @@ export type Notice = {
   [key: string]: any;
 };
 
-const seenKey = (id: string) => `notice_seen_${id}`;
-
 type NoticeContextValue = {
   notices: Notice[];
   unreadCount: number;
+  /** 알림벨에서 개별 공지를 읽음 처리 — 계정(서버)에 영구 기록됨 */
   markSeen: (id: string) => void;
+  /** 알림벨을 열 때 현재 안 읽은 공지 전체를 읽음 처리 — 계정(서버)에 영구 기록됨 */
   markAllSeen: () => void;
   /** 공지 팝업을 닫을 때 호출 — 계정에 영구 기록되어 다음 접속부터 다시 뜨지 않음 */
   dismissNotice: (id: string) => void;
@@ -30,7 +30,6 @@ const NoticeContext = createContext<NoticeContextValue | null>(null);
 export function NoticeProvider({ children }: { children: ReactNode }) {
   const { data: session } = useSession();
   const [notices, setNotices] = useState<Notice[]>([]);
-  const [, forceRender] = useState(0);
 
   useEffect(() => {
     if (!session) { setNotices([]); return; }
@@ -40,24 +39,28 @@ export function NoticeProvider({ children }: { children: ReactNode }) {
       .catch(() => {});
   }, [session]);
 
-  // 알림벨 배지용 "읽음" 표시 (기기 로컬) — 공지 팝업의 영구 dismiss와는 별개
+  // 읽음 처리는 항상 계정 기준(서버 NoticeSeen)으로 남긴다 — 브라우저를 바꿔도 상태가 유지된다.
   const markSeen = useCallback((id: string) => {
-    if (localStorage.getItem(seenKey(id))) return;
-    localStorage.setItem(seenKey(id), '1');
-    forceRender((v) => v + 1);
+    setNotices((prev) => prev.map((n) => n.id === id ? { ...n, seen: true } : n));
+    fetch(`/api/notices/${id}/seen`, { method: 'POST' }).catch(() => {});
   }, []);
 
   const markAllSeen = useCallback(() => {
-    notices.forEach((n) => localStorage.setItem(seenKey(n.id), '1'));
-    forceRender((v) => v + 1);
-  }, [notices]);
+    setNotices((prev) => {
+      const unseenIds = prev.filter((n) => !n.seen).map((n) => n.id);
+      unseenIds.forEach((id) => {
+        fetch(`/api/notices/${id}/seen`, { method: 'POST' }).catch(() => {});
+      });
+      return prev.map((n) => n.seen ? n : { ...n, seen: true });
+    });
+  }, []);
 
   const dismissNotice = useCallback((id: string) => {
     setNotices((prev) => prev.map((n) => n.id === id ? { ...n, seen: true } : n));
     fetch(`/api/notices/${id}/seen`, { method: 'POST' }).catch(() => {});
   }, []);
 
-  const unreadCount = notices.filter((n) => !localStorage.getItem(seenKey(n.id))).length;
+  const unreadCount = notices.filter((n) => !n.seen).length;
 
   return (
     <NoticeContext.Provider value={{ notices, unreadCount, markSeen, markAllSeen, dismissNotice }}>

@@ -21,10 +21,15 @@ export async function GET(req: NextRequest) {
     if (status) where.status = status;
     const orders = await prisma.order.findMany({
       where,
-      include: {
-        user: { select: { id: true, name: true, email: true, phone: true } },
+      select: {
+        id: true, userId: true, totalAmount: true, status: true, cancelLocked: true, createdAt: true, note: true,
+        user: { select: { name: true } },
         items: {
-          include: {
+          select: {
+            id: true, quantity: true, price: true, size: true, color: true,
+            confirmedAt: true, arrivedAt: true, cancelledAt: true,
+            outOfStockAt: true, unshippedAt: true, remark: true, cancelLocked: true,
+            isOnSale: true, saleType: true, saleValue: true,
             product: {
               select: {
                 id: true, name: true, images: true, brand: true, colors: true,

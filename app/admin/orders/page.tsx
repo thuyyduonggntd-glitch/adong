@@ -261,6 +261,26 @@ function OrderTable({ rows, selected, onToggleRow, onToggleAll, actions }: {
   );
 }
 
+/* ── 큐 페이지네이션 (주문접수/주문확인 공용) ── */
+function QueuePagination({ page, totalPages, onChange, totalCount, label }: {
+  page: number; totalPages: number; onChange: (p: number) => void; totalCount: number; label: string;
+}) {
+  return (
+    <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+      <span className="text-xs text-slate-400">{label} {totalCount}건</span>
+      {totalPages > 1 && (
+        <div className="flex items-center gap-2">
+          <button onClick={() => onChange(Math.max(1, page - 1))} disabled={page === 1}
+            className="px-2.5 py-1 rounded border border-slate-200 text-sm text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:border-primary-400">‹</button>
+          <span className="text-sm text-slate-500">{page} / {totalPages}</span>
+          <button onClick={() => onChange(Math.min(totalPages, page + 1))} disabled={page === totalPages}
+            className="px-2.5 py-1 rounded border border-slate-200 text-sm text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:border-primary-400">›</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── 입고 행 타입 ── */
 type InboundFormRow = {
   productId: string; name: string; brand: string;
@@ -809,6 +829,7 @@ function BrandOrderView({ rows }: { rows: FlatRow[] }) {
 
 const TABS = ['주문접수', '주문확인', '일별입고', '전체입고', '품절/미송'] as const;
 type Tab = typeof TABS[number];
+const QUEUE_PAGE_SIZE = 40;
 
 /* ── 메인 페이지 ── */
 export default function AdminOrdersPage() {
@@ -823,6 +844,8 @@ export default function AdminOrdersPage() {
   const [loading, setLoading]       = useState(true);
   const [selected, setSelected]     = useState<Set<string>>(new Set()); // itemId 기반, 탭 전환 시 유지
   const [search, setSearch]         = useState('');
+  const [pendingPage, setPendingPage]     = useState(1);
+  const [confirmedPage, setConfirmedPage] = useState(1);
   const [inboundDateFilter, setInboundDateFilter]   = useState('');
   const [inboundBrandFilter, setInboundBrandFilter] = useState('');
   const [inboundIdFilter, setInboundIdFilter]       = useState('');
@@ -877,6 +900,17 @@ export default function AdminOrdersPage() {
 
   const filteredPending   = useMemo(() => filterRows(pendingRows),   [pendingRows,   filterRows]);
   const filteredConfirmed = useMemo(() => filterRows(confirmedRows), [confirmedRows, filterRows]);
+
+  /* 큐 페이지네이션 — "전체 선택"은 안전을 위해 현재 페이지에 보이는 건만 선택 대상으로 삼는다 */
+  const totalPendingPages   = Math.max(1, Math.ceil(filteredPending.length / QUEUE_PAGE_SIZE));
+  const totalConfirmedPages = Math.max(1, Math.ceil(filteredConfirmed.length / QUEUE_PAGE_SIZE));
+  const pagedPending   = useMemo(() => filteredPending.slice((pendingPage - 1) * QUEUE_PAGE_SIZE, pendingPage * QUEUE_PAGE_SIZE), [filteredPending, pendingPage]);
+  const pagedConfirmed = useMemo(() => filteredConfirmed.slice((confirmedPage - 1) * QUEUE_PAGE_SIZE, confirmedPage * QUEUE_PAGE_SIZE), [filteredConfirmed, confirmedPage]);
+
+  useEffect(() => { setPendingPage(1); setConfirmedPage(1); }, [search]);
+  // 일괄처리로 목록이 줄어들어 현재 페이지가 범위를 벗어나면 마지막 페이지로 보정
+  useEffect(() => { setPendingPage((p) => Math.min(p, totalPendingPages)); }, [totalPendingPages]);
+  useEffect(() => { setConfirmedPage((p) => Math.min(p, totalConfirmedPages)); }, [totalConfirmedPages]);
 
   const filteredInbounds = useMemo(() => {
     if (!inboundDateFilter && !inboundBrandFilter) return [];
@@ -1049,8 +1083,9 @@ export default function AdminOrdersPage() {
     setSelected((s) => { const n = new Set(s); n.has(itemId) ? n.delete(itemId) : n.add(itemId); return n; });
   }, []);
 
-  const toggleAllPending   = useCallback(() => makeToggleAll(filteredPending.map((r) => r.itemId),         selected, setSelected)(), [filteredPending,         selected]);
-  const toggleAllConfirmed = useCallback(() => makeToggleAll(filteredConfirmed.map((r) => r.itemId),       selected, setSelected)(), [filteredConfirmed,       selected]);
+  // 안전을 위해 "전체 선택"은 현재 페이지에 보이는 건만 대상으로 한다 (안 본 페이지의 주문이 실수로 함께 처리되는 것을 방지)
+  const toggleAllPending   = useCallback(() => makeToggleAll(pagedPending.map((r) => r.itemId),             selected, setSelected)(), [pagedPending,            selected]);
+  const toggleAllConfirmed = useCallback(() => makeToggleAll(pagedConfirmed.map((r) => r.itemId),           selected, setSelected)(), [pagedConfirmed,          selected]);
   const toggleAllArrived   = useCallback(() => makeToggleAll(filteredTodayArrivedItems.map((it) => it.id), selected, setSelected)(), [filteredTodayArrivedItems, selected]);
   const toggleAllOusu      = useCallback(() => makeToggleAll(outStockUnshippedItems.map((it) => it.id),    selected, setSelected)(), [outStockUnshippedItems,  selected]);
 
@@ -1270,14 +1305,18 @@ export default function AdminOrdersPage() {
               {pendingViewMode === '브랜드별' ? (
                 <BrandOrderView rows={filteredPending} />
               ) : (
-                <OrderTable
-                  rows={filteredPending} selected={selected} onToggleRow={toggleRow} onToggleAll={toggleAllPending}
-                  actions={[
-                    { label: '주문 확인으로 변경', color: 'bg-green-600', onClick: confirmSelected },
-                    { label: '취소불가 잠금', color: 'bg-red-500', onClick: () => setCancelLock(true) },
-                    { label: '취소 허용', color: 'bg-slate-500', onClick: () => setCancelLock(false) },
-                  ]}
-                />
+                <>
+                  <QueuePagination page={pendingPage} totalPages={totalPendingPages} onChange={setPendingPage}
+                    totalCount={pendingRows.length} label="전체 미처리:" />
+                  <OrderTable
+                    rows={pagedPending} selected={selected} onToggleRow={toggleRow} onToggleAll={toggleAllPending}
+                    actions={[
+                      { label: '주문 확인으로 변경', color: 'bg-green-600', onClick: confirmSelected },
+                      { label: '취소불가 잠금', color: 'bg-red-500', onClick: () => setCancelLock(true) },
+                      { label: '취소 허용', color: 'bg-slate-500', onClick: () => setCancelLock(false) },
+                    ]}
+                  />
+                </>
               )}
             </div>
           )}
@@ -1289,8 +1328,10 @@ export default function AdminOrdersPage() {
                 <input className="input max-w-xs text-sm" placeholder="아이디, 브랜드, 상품명..." value={search} onChange={(e) => setSearch(e.target.value)} />
                 <p className="text-xs text-slate-400">입고 처리된 항목은 자동으로 일별입고로 이동됩니다.</p>
               </div>
+              <QueuePagination page={confirmedPage} totalPages={totalConfirmedPages} onChange={setConfirmedPage}
+                totalCount={confirmedRows.length} label="전체 확인대기:" />
               <OrderTable
-                rows={filteredConfirmed} selected={selected} onToggleRow={toggleRow} onToggleAll={toggleAllConfirmed}
+                rows={pagedConfirmed} selected={selected} onToggleRow={toggleRow} onToggleAll={toggleAllConfirmed}
                 actions={[
                   { label: '✓ 입고 처리', color: 'bg-emerald-600', onClick: markAsArrived },
                   { label: '품절 처리', color: 'bg-orange-500', onClick: markAsOutOfStock },

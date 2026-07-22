@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { unstable_cache } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
@@ -8,7 +9,7 @@ import BrandSection from './BrandSection';
 import T from '@/components/i18n/T';
 import HomeSearchForm from '@/components/shop/HomeSearchForm';
 
-async function getTopBrands() {
+async function getTopBrandsUncached() {
   const rows = await prisma.$queryRaw<Array<{ brand: string; cnt: bigint }>>`
     SELECT p.brand, COUNT(oi.id) AS cnt
     FROM "OrderItem" oi
@@ -24,7 +25,17 @@ async function getTopBrands() {
   return topNames.map((n) => details.find((b) => b.name === n)).filter((b): b is NonNullable<typeof b> => b != null);
 }
 
-async function getHomeData(grade: string) {
+// 브랜드/주문 집계는 요청마다 바뀌지 않으므로 60초 캐싱 — DB 왕복을 줄여 응답 속도를 높인다.
+const getTopBrands = unstable_cache(getTopBrandsUncached, ['home-top-brands'], { revalidate: 60 });
+const getAllBrands = unstable_cache(
+  () => prisma.brand.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true, image: true } }),
+  ['home-all-brands'],
+  { revalidate: 60 }
+);
+
+async function getHomeData() {
+  // grade는 표시할 가격만 고르는 데 쓰이므로(순수 계산) 쿼리 자체는 grade와 무관하게 실행 가능 —
+  // 세션 조회와 병렬로 돌려 왕복 시간을 겹친다.
   const [products, topBrands, allBrands] = await Promise.all([
     prisma.product.findMany({
       where: { isActive: true },
@@ -33,8 +44,21 @@ async function getHomeData(grade: string) {
       take: 8,
     }),
     getTopBrands(),
-    prisma.brand.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true, image: true } }),
+    getAllBrands(),
   ]);
+
+  return { products, topBrands, allBrands };
+}
+
+
+export default async function HomePage() {
+  // 세션 조회(내부 DB 재조회 포함)와 홈 데이터 조회를 동시에 실행해 왕복을 겹치게 한다.
+  const [session, { products, topBrands, allBrands }] = await Promise.all([
+    getServerSession(authOptions),
+    getHomeData(),
+  ]);
+  const grade   = (session?.user as any)?.dealerGrade ?? 'REGULAR';
+  const userId  = (session?.user as any)?.id as string | undefined;
 
   const productsWithPrice = products.map((product) => {
     const gradePrice = product.prices.find((p) => p.grade === (grade as any));
@@ -43,15 +67,6 @@ async function getHomeData(grade: string) {
     return { ...product, myGradePrice: basePrice, myFinalPrice: finalPrice };
   });
 
-  return { products: productsWithPrice, topBrands, allBrands };
-}
-
-
-export default async function HomePage() {
-  const session = await getServerSession(authOptions);
-  const grade   = (session?.user as any)?.dealerGrade ?? 'REGULAR';
-  const userId  = (session?.user as any)?.id as string | undefined;
-  const { products, topBrands, allBrands } = await getHomeData(grade);
   const wishlistIds = userId
     ? new Set((await prisma.wishlist.findMany({ where: { userId }, select: { productId: true } })).map((w) => w.productId))
     : new Set<string>();
@@ -79,7 +94,7 @@ export default async function HomePage() {
           <Link href="/home/products" className="text-primary-600 text-sm font-medium hover:underline"><T k="home.viewAll" /></Link>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-          {products.map((product) => (
+          {productsWithPrice.map((product) => (
             <ProductCard key={product.id} product={product as any} isWishlisted={wishlistIds.has(product.id)} />
           ))}
         </div>

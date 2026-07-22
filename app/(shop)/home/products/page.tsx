@@ -1,3 +1,4 @@
+import { unstable_cache } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
@@ -12,6 +13,44 @@ import { calcFinalPrice } from '@/lib/utils';
 import T from '@/components/i18n/T';
 import { buildProductSearchWhere } from '@/lib/productSearch';
 
+// 카테고리/브랜드 목록은 자주 바뀌지 않으므로 60초 캐싱해 매 요청 DB 왕복을 줄인다.
+const getCachedCategories = unstable_cache(
+  () => prisma.category.findMany(),
+  ['products-page-categories'],
+  { revalidate: 60 }
+);
+const getCachedBrands = unstable_cache(
+  () => prisma.brand.findMany({ orderBy: { name: 'asc' } }),
+  ['products-page-brands'],
+  { revalidate: 60 }
+);
+const getCachedSeasons = unstable_cache(
+  (brandFilter: string | undefined) => prisma.product.findMany({
+    where: {
+      isActive: true, season: { not: null },
+      ...(brandFilter ? { brand: { contains: brandFilter, mode: 'insensitive' } } : {}),
+    },
+    select: { season: true },
+    distinct: ['season'],
+    orderBy: { season: 'asc' },
+  }),
+  ['products-page-seasons'],
+  { revalidate: 60 }
+);
+const getCachedProductTypes = unstable_cache(
+  (brandFilter: string | undefined) => prisma.product.findMany({
+    where: {
+      isActive: true, productType: { not: null },
+      ...(brandFilter ? { brand: { contains: brandFilter, mode: 'insensitive' } } : {}),
+    },
+    select: { productType: true },
+    distinct: ['productType'],
+    orderBy: { productType: 'asc' },
+  }),
+  ['products-page-productTypes'],
+  { revalidate: 60 }
+);
+
 interface Props {
   searchParams: {
     category?: string; q?: string; sort?: string; brand?: string;
@@ -22,10 +61,6 @@ interface Props {
 
 export default async function ProductsPage({ searchParams }: Props) {
   const { category, q, sort, brand, season, productType, isNew, isOnSale, isCarryOver } = searchParams;
-
-  const session = await getServerSession(authOptions);
-  const grade   = (session?.user as any)?.dealerGrade ?? 'REGULAR';
-  const userId  = (session?.user as any)?.id as string | undefined;
 
   const orderBy =
     sort === 'price_asc'  ? { price: 'asc'  as const } :
@@ -43,33 +78,21 @@ export default async function ProductsPage({ searchParams }: Props) {
   if (isCarryOver === '1') productConditions.push({ isCarryOver: true });
   if (isNew === '1')       productConditions.push({ createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } });
 
-  const [products, categories, seasons, productTypes, dbBrands] = await Promise.all([
+  const [session, products, categories, seasons, productTypes, dbBrands] = await Promise.all([
+    getServerSession(authOptions),
     prisma.product.findMany({
       where: { AND: productConditions },
       include: { category: true, sizeCategory: true, prices: true },
       orderBy,
     }),
-    prisma.category.findMany(),
-    prisma.product.findMany({
-      where: {
-        isActive: true, season: { not: null },
-        ...(brand ? { brand: { contains: brand, mode: 'insensitive' } } : {}),
-      },
-      select: { season: true },
-      distinct: ['season'],
-      orderBy: { season: 'asc' },
-    }),
-    prisma.product.findMany({
-      where: {
-        isActive: true, productType: { not: null },
-        ...(brand ? { brand: { contains: brand, mode: 'insensitive' } } : {}),
-      },
-      select: { productType: true },
-      distinct: ['productType'],
-      orderBy: { productType: 'asc' },
-    }),
-    prisma.brand.findMany({ orderBy: { name: 'asc' } }),
+    getCachedCategories(),
+    getCachedSeasons(brand),
+    getCachedProductTypes(brand),
+    getCachedBrands(),
   ]);
+
+  const grade  = (session?.user as any)?.dealerGrade ?? 'REGULAR';
+  const userId = (session?.user as any)?.id as string | undefined;
 
   const wishlistIds = userId
     ? new Set((await prisma.wishlist.findMany({ where: { userId }, select: { productId: true } })).map((w) => w.productId))

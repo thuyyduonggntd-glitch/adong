@@ -30,3 +30,11 @@ export async function uploadToGCS(
 
   return `https://storage.googleapis.com/${BUCKET_NAME}/${objectPath}`;
 }
+
+/** 우리 GCS 버킷 URL이 아니면(placehold.co 등 외부/레거시 이미지) 조용히 건너뛴다. */
+export async function deleteFromGCS(url: string): Promise<void> {
+  const prefix = `https://storage.googleapis.com/${BUCKET_NAME}/`;
+  if (!url.startsWith(prefix)) return;
+  const objectPath = url.slice(prefix.length);
+  await getStorage().bucket(BUCKET_NAME).file(objectPath).delete({ ignoreNotFound: true });
+}

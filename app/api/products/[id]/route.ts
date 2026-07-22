@@ -7,6 +7,7 @@ import { hasAdminAccess } from '@/lib/adminAccess';
 import { calcFinalPrice } from '@/lib/utils';
 import { upsertBrandNotice } from '@/lib/notify';
 import { translateAndSaveProduct, productSourceChanged } from '@/lib/translate';
+import { deleteFromGCS } from '@/lib/gcs';
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -123,6 +124,18 @@ export async function DELETE(_: NextRequest, { params }: { params: { id: string 
   const session = await getServerSession(authOptions);
   if (!session || !hasAdminAccess((session.user as any)?.role))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const existing = await prisma.product.findUnique({ where: { id: params.id }, select: { images: true } });
   await prisma.product.delete({ where: { id: params.id } });
+
+  // GCS 이미지 삭제는 베스트에포트 — 실패해도 상품 삭제 자체는 이미 완료된 상태를 유지한다.
+  if (existing?.images?.length) {
+    await Promise.all(
+      existing.images.map((url) =>
+        deleteFromGCS(url).catch((err) => console.error('[gcs] failed to delete product image:', url, err))
+      )
+    );
+  }
+
   return NextResponse.json({ ok: true });
 }

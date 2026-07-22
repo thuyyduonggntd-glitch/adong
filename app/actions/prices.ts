@@ -20,15 +20,16 @@ export async function getProductPrices(productIds: string[]) {
     const basePrice  = gradePrice ? Number(gradePrice.price) : Number(product.price);
     const finalPrice = calcFinalPrice(basePrice, product.isOnSale, product.saleType, product.saleValue);
     return {
-      id:          product.id,
-      myGradePrice: basePrice,
-      myFinalPrice: finalPrice,
-      isOnSale:    product.isOnSale,
-      saleType:    product.saleType  ?? null,
-      saleValue:   product.saleValue ?? null,
-      images:      product.images,
-      colors:      product.colors,
-      brand:       product.brand     ?? '',
+      id:              product.id,
+      myGradePrice:    basePrice,
+      myFinalPrice:    finalPrice,
+      isOnSale:        product.isOnSale,
+      saleType:        product.saleType  ?? null,
+      saleValue:       product.saleValue ?? null,
+      images:          product.images,
+      colors:          product.colors,
+      brand:           product.brand     ?? '',
+      sizeExtraPrices: (product.sizeExtraPrices as Record<string, number>) ?? {},
     };
   });
 }

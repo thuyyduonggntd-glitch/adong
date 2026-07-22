@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { hasAdminAccess } from '@/lib/adminAccess';
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || (session.user as any)?.role !== 'ADMIN')
+  if (!session || !hasAdminAccess((session.user as any)?.role))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { codes } = await req.json();

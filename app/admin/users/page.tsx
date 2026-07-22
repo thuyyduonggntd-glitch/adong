@@ -1,13 +1,15 @@
 'use client';
 import { useEffect, useState, useMemo } from 'react';
 import { formatPrice, formatDate, DEALER_GRADE_LABELS, DEALER_GRADE_ORDER } from '@/lib/utils';
+import { COUNTRIES } from '@/lib/countries';
+import PhoneInput from '@/components/PhoneInput';
 
 type UserRow = {
-  id: string; name: string; email: string; phone: string | null; role: 'USER' | 'ADMIN';
+  id: string; name: string; email: string; phone: string | null; role: 'USER' | 'ADMIN' | 'SUB_ADMIN';
   isActive: boolean;
   dealerGrade: string;
-  shopName: string | null; businessNumber: string | null; address: string | null;
-  shippingName: string | null; shippingPhone: string | null;
+  shopName: string | null; businessNumber: string | null; shopSiteUrl: string | null; address: string | null;
+  shippingName: string | null; shippingPhone: string | null; country: string | null;
   depositAmount: number; createdAt: string;
   _count: { orders: number };
   totalSales: number;
@@ -15,9 +17,11 @@ type UserRow = {
 
 type EditForm = {
   name: string; email: string; phone: string; shopName: string;
-  businessNumber: string; address: string; shippingName: string;
-  shippingPhone: string; password: string; dealerGrade: string;
+  businessNumber: string; shopSiteUrl: string; address: string; shippingName: string;
+  shippingPhone: string; password: string; dealerGrade: string; country: string; role: string;
 };
+
+const ROLE_LABELS: Record<string, string> = { USER: '일반 회원', SUB_ADMIN: '부관리자', ADMIN: '관리자' };
 
 type UserCardProps = {
   user: UserRow;
@@ -38,7 +42,7 @@ function UserCard({
   onExpand, onFormChange, onSave, onClose, onToggleActive,
 }: UserCardProps) {
   const outstanding = user.totalSales - user.depositAmount;
-  const isAdmin     = user.role === 'ADMIN';
+  const isAdmin     = user.role === 'ADMIN' || user.role === 'SUB_ADMIN';
 
   return (
     <div className={`card overflow-hidden ${isOpen ? 'shadow-md' : ''} ${!user.isActive ? 'opacity-60' : ''}`}>
@@ -54,7 +58,7 @@ function UserCard({
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-semibold text-slate-800 text-sm">{user.name}</span>
             {isAdmin && (
-              <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-semibold">관리자</span>
+              <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-semibold">{ROLE_LABELS[user.role]}</span>
             )}
             {!user.isActive && (
               <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded font-semibold">비활성</span>
@@ -62,11 +66,15 @@ function UserCard({
             {user.shopName && (
               <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded">{user.shopName}</span>
             )}
+            {user.country && (
+              <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{user.country}</span>
+            )}
             <span className="text-xs text-slate-400">{user.email}</span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
             {user.phone || '-'} · 주문 {user._count.orders}건 · 가입 {formatDate(user.createdAt)}
             {user.businessNumber && ` · 사업자 ${user.businessNumber}`}
+            {!user.businessNumber && user.shopSiteUrl && ` · 샵사이트 ${user.shopSiteUrl}`}
           </p>
         </div>
         <div className="flex items-center gap-4 text-right flex-shrink-0">
@@ -102,9 +110,9 @@ function UserCard({
               {([
                 { label: '이름',       key: 'name',           type: 'text',  placeholder: '이름' },
                 { label: '이메일',     key: 'email',          type: 'email', placeholder: 'email@example.com' },
-                { label: '연락처',     key: 'phone',          type: 'tel',   placeholder: '010-0000-0000' },
                 { label: '샵명',       key: 'shopName',       type: 'text',  placeholder: '상호명' },
                 { label: '사업자번호', key: 'businessNumber', type: 'text',  placeholder: '000-00-00000' },
+                { label: '샵사이트링크', key: 'shopSiteUrl',   type: 'text',  placeholder: 'https://...' },
               ] as { label: string; key: keyof EditForm; type: string; placeholder: string }[]).map(({ label, key, type, placeholder }) => (
                 <div key={key}>
                   <label className="block text-xs text-slate-500 mb-1">{label}</label>
@@ -114,12 +122,35 @@ function UserCard({
                 </div>
               ))}
               <div>
+                <label className="block text-xs text-slate-500 mb-1">연락처</label>
+                <PhoneInput value={editForm.phone} onChange={(phone) => onFormChange('phone', phone)} placeholder="010-0000-0000" />
+              </div>
+              <div>
                 <label className="block text-xs text-slate-500 mb-1">대리점 등급</label>
                 <select className="input text-sm w-full" value={editForm.dealerGrade}
                   onChange={(e) => onFormChange('dealerGrade', e.target.value)}>
                   {DEALER_GRADE_ORDER.map((g) => (
                     <option key={g} value={g}>{DEALER_GRADE_LABELS[g]}</option>
                   ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">국가</label>
+                <select className="input text-sm w-full" value={editForm.country}
+                  onChange={(e) => onFormChange('country', e.target.value)}>
+                  <option value="">선택 안 함</option>
+                  {COUNTRIES.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">권한</label>
+                <select className="input text-sm w-full" value={editForm.role}
+                  onChange={(e) => onFormChange('role', e.target.value)}>
+                  <option value="USER">일반 회원</option>
+                  <option value="SUB_ADMIN">부관리자 (상품·주문·주문취소·공지·배송·문의만 관리)</option>
+                  <option value="ADMIN">관리자 (전체 권한)</option>
                 </select>
               </div>
             </div>
@@ -137,9 +168,7 @@ function UserCard({
               </div>
               <div>
                 <label className="block text-xs text-slate-500 mb-1">수령인 연락처</label>
-                <input type="tel" className="input text-sm w-full" placeholder="010-0000-0000"
-                  value={editForm.shippingPhone}
-                  onChange={(e) => onFormChange('shippingPhone', e.target.value)} />
+                <PhoneInput value={editForm.shippingPhone} onChange={(phone) => onFormChange('shippingPhone', phone)} placeholder="010-0000-0000" />
               </div>
               <div className="sm:col-span-2 lg:col-span-1">
                 <label className="block text-xs text-slate-500 mb-1">주소</label>
@@ -195,8 +224,8 @@ export default function AdminUsersPage() {
   const [search, setSearch]         = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editForm, setEditForm]     = useState<EditForm>({
-    name: '', email: '', phone: '', shopName: '', businessNumber: '',
-    address: '', shippingName: '', shippingPhone: '', password: '', dealerGrade: 'REGULAR',
+    name: '', email: '', phone: '', shopName: '', businessNumber: '', shopSiteUrl: '',
+    address: '', shippingName: '', shippingPhone: '', password: '', dealerGrade: 'REGULAR', country: '', role: 'USER',
   });
   const [saving, setSaving]         = useState(false);
   const [savedId, setSavedId]       = useState<string | null>(null);
@@ -214,10 +243,10 @@ export default function AdminUsersPage() {
     setSavedId(null);
     setEditForm({
       name: user.name, email: user.email, phone: user.phone || '',
-      shopName: user.shopName || '', businessNumber: user.businessNumber || '',
+      shopName: user.shopName || '', businessNumber: user.businessNumber || '', shopSiteUrl: user.shopSiteUrl || '',
       address: user.address || '',
       shippingName: user.shippingName || '', shippingPhone: user.shippingPhone || '',
-      password: '', dealerGrade: user.dealerGrade || 'REGULAR',
+      password: '', dealerGrade: user.dealerGrade || 'REGULAR', country: user.country || '', role: user.role,
     });
   };
 
@@ -229,10 +258,10 @@ export default function AdminUsersPage() {
     setSaving(true);
     const body: Record<string, string> = {
       name: editForm.name, email: editForm.email, phone: editForm.phone,
-      shopName: editForm.shopName, businessNumber: editForm.businessNumber,
+      shopName: editForm.shopName, businessNumber: editForm.businessNumber, shopSiteUrl: editForm.shopSiteUrl,
       address: editForm.address,
       shippingName: editForm.shippingName, shippingPhone: editForm.shippingPhone,
-      dealerGrade: editForm.dealerGrade,
+      dealerGrade: editForm.dealerGrade, country: editForm.country, role: editForm.role,
     };
     if (editForm.password.trim()) body.password = editForm.password;
 
@@ -271,7 +300,7 @@ export default function AdminUsersPage() {
       (u.shopName?.toLowerCase().includes(search.toLowerCase()) ?? false)
     ), [users, search]);
 
-  const admins  = filtered.filter((u) => u.role === 'ADMIN');
+  const admins  = filtered.filter((u) => u.role === 'ADMIN' || u.role === 'SUB_ADMIN');
   const members = filtered.filter((u) => u.role === 'USER');
 
   const cardProps = { editForm, saving, savedId, togglingId, onFormChange: handleFormChange, onSave: handleSave, onClose: () => setExpandedId(null), onToggleActive: handleToggleActive };

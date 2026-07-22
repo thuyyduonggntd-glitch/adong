@@ -15,12 +15,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const data = await req.json();
 
   const allowedScalarFields = isAdmin
-    ? ['name', 'phone', 'address', 'shippingName', 'shippingPhone', 'depositAmount', 'email', 'shopName', 'businessNumber', 'isActive', 'dealerGrade']
+    ? ['name', 'phone', 'address', 'shippingName', 'shippingPhone', 'depositAmount', 'email', 'shopName', 'businessNumber', 'shopSiteUrl', 'country', 'isActive', 'dealerGrade', 'role']
     : ['name', 'phone', 'address', 'shippingName', 'shippingPhone'];
 
   const updateData: Record<string, any> = Object.fromEntries(
     Object.entries(data).filter(([k]) => allowedScalarFields.includes(k))
   );
+
+  if (updateData.role && !['USER', 'ADMIN', 'SUB_ADMIN'].includes(updateData.role)) {
+    delete updateData.role;
+  }
 
   /* 비밀번호 변경 — 어드민 또는 본인만 */
   if (data.password && typeof data.password === 'string' && data.password.length >= 4) {

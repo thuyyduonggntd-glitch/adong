@@ -32,6 +32,34 @@ export default function AdminProductsPage() {
     fetch('/api/products?admin=1').then((r) => r.json()).then((d) => { setProducts(d); setLoading(false); });
   }, []);
 
+  const [translateStatus, setTranslateStatus] = useState<{ total: number; translated: number } | null>(null);
+  const [translating, setTranslating] = useState(false);
+  const [translateResult, setTranslateResult] = useState('');
+
+  const loadTranslateStatus = () => {
+    fetch('/api/admin/translate-products').then((r) => r.json()).then((d) => setTranslateStatus(d)).catch(() => {});
+  };
+
+  useEffect(() => { loadTranslateStatus(); }, []);
+
+  const runBatchTranslate = async () => {
+    setTranslating(true);
+    setTranslateResult('');
+    try {
+      const res = await fetch('/api/admin/translate-products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force: false }),
+      });
+      const d = await res.json();
+      setTranslateResult(`완료: ${d.done}개 번역됨, ${d.failed}개 실패 (전체 대상 ${d.total}개)`);
+      loadTranslateStatus();
+    } catch {
+      setTranslateResult('번역 요청 중 오류가 발생했습니다.');
+    }
+    setTranslating(false);
+  };
+
   const toggleActive = async (id: string, isActive: boolean) => {
     await fetch(`/api/products/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isActive: !isActive }) });
     setProducts((prev) => prev.map((p) => p.id === id ? { ...p, isActive: !isActive } : p));
@@ -101,12 +129,36 @@ export default function AdminProductsPage() {
     setSelected(new Set());
   };
 
+  const handleBulkSetActive = async (isActive: boolean) => {
+    const productIds = Array.from(selected);
+    if (!confirm(`선택된 ${productIds.length}개 상품을 ${isActive ? '판매중으로 전환' : '숨김 처리'}하시겠습니까?`)) return;
+    await fetch('/api/products/bulk-active', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ productIds, isActive }),
+    });
+    setProducts((prev) => prev.map((p) => selected.has(p.id) ? { ...p, isActive } : p));
+    setSelected(new Set());
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-slate-800">상품 관리</h1>
         <Link href="/admin/products/bulk" className="btn-outline text-sm">일괄 등록</Link>
         <Link href="/admin/products/new" className="btn-primary">+ 상품 등록</Link>
+      </div>
+
+      {/* 자동 번역 상태 + 일괄 번역 */}
+      <div className="flex items-center gap-3 mb-4 p-3 bg-slate-50 border border-slate-200 rounded-xl flex-wrap">
+        <span className="text-sm text-slate-600">
+          🌐 번역 완료 {translateStatus ? `${translateStatus.translated} / ${translateStatus.total}` : '-'}
+        </span>
+        <button onClick={runBatchTranslate} disabled={translating}
+          className="text-sm bg-primary-600 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50">
+          {translating ? '번역 중...' : '미번역 상품/카테고리 일괄 번역'}
+        </button>
+        {translateResult && <span className="text-xs text-slate-500">{translateResult}</span>}
       </div>
 
       <div className="flex flex-wrap gap-2 mb-4">
@@ -124,6 +176,8 @@ export default function AdminProductsPage() {
           <span className="text-sm font-medium text-primary-800">{selected.size}개 선택됨</span>
           <button onClick={() => setBulkModal(true)} className="text-sm bg-red-500 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-red-600">SALE 적용</button>
           <button onClick={handleBulkRemoveSale} className="text-sm border border-slate-300 text-slate-600 px-3 py-1.5 rounded-lg font-medium hover:bg-slate-100">SALE 해제</button>
+          <button onClick={() => handleBulkSetActive(false)} className="text-sm bg-slate-500 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-slate-600">일괄 숨김</button>
+          <button onClick={() => handleBulkSetActive(true)} className="text-sm bg-green-600 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-green-700">일괄 판매중으로</button>
           <button onClick={() => setSelected(new Set())} className="text-xs text-slate-400 hover:text-slate-600 ml-auto">선택 해제</button>
         </div>
       )}

@@ -9,11 +9,15 @@ type ParsedProduct = {
   productNumber: string;
   name: string;
   brand: string;
+  categoryGroup: string;
   categoryName: string;
+  sizeCategoryName: string;
   colors: string[];
   sizes: string[];
   price: number;
   prices: { grade: string; price: number }[];
+  saleRate: number;
+  salePrice: number;
   season: string;
   material: string;
   gender: string;
@@ -34,10 +38,10 @@ type Results  = { created: number; updated: number; skipped: number; errors: str
 /* ───── Excel template download ───── */
 async function downloadTemplate() {
   const XLSX = await import('xlsx');
-  const headers = ['상품코드','상품명','브랜드','카테고리','색상(쉼표구분)','사이즈(쉼표구분)',
-                   '일반가','SILVER가','GOLD가','VIP가','시즌','재질','성별','종류','설명','비고'];
-  const sample  = ['A001','상품명예시','브랜드명','아동복','레드,블루','S,M,L',
-                   '10000','9500','9000','8500','여름1차','면','공용','티셔츠','색상 주의',''];
+  const headers = ['상품코드','상품명','브랜드','카테고리 분류','카테고리','카테고리 사이즈','색상(쉼표구분)','사이즈(쉼표구분)',
+                   '일반가','SILVER가','GOLD가','VIP가','세일률(%)','세일가','시즌','재질','성별','종류','설명','비고'];
+  const sample  = ['A001','상품명예시','브랜드명','의류','아동복','키즈','레드,블루','S,M,L',
+                   '10000','9500','9000','8500','10','9000','여름1차','면','공용','티셔츠','색상 주의',''];
   const ws = XLSX.utils.aoa_to_sheet([headers, sample]);
   ws['!cols'] = headers.map(() => ({ wch: 16 }));
   const wb = XLSX.utils.book_new();
@@ -65,7 +69,9 @@ async function parseExcel(file: File): Promise<Omit<ParsedProduct, 'localImages'
         productNumber: g('상품코드'),
         name:          g('상품명'),
         brand:         g('브랜드'),
+        categoryGroup: g('카테고리 분류'),
         categoryName:  g('카테고리'),
+        sizeCategoryName: g('카테고리 사이즈'),
         colors:        g('색상(쉼표구분)').split(',').map(s => s.trim()).filter(Boolean),
         sizes:         g('사이즈(쉼표구분)').split(',').map(s => s.trim()).filter(Boolean),
         price:         Number(row[col('일반가')] || 0),
@@ -75,6 +81,8 @@ async function parseExcel(file: File): Promise<Omit<ParsedProduct, 'localImages'
           { grade: 'GOLD',    price: Number(row[col('GOLD가')]   || 0) },
           { grade: 'VIP',     price: Number(row[col('VIP가')]    || 0) },
         ].filter(p => p.price > 0),
+        saleRate:    Number(row[col('세일률(%)')] || 0),
+        salePrice:   Number(row[col('세일가')] || 0),
         season:      g('시즌'),
         material:    g('재질'),
         gender:      g('성별') || '공용',
@@ -424,10 +432,14 @@ export default function BulkImportPage() {
                 <th className="px-3 py-2.5 text-left w-28">상품코드</th>
                 <th className="px-3 py-2.5 text-left min-w-40">상품명</th>
                 <th className="px-3 py-2.5 text-left w-28">브랜드</th>
+                <th className="px-3 py-2.5 text-left w-20">카테고리 분류</th>
                 <th className="px-3 py-2.5 text-left w-24">카테고리</th>
+                <th className="px-3 py-2.5 text-left w-24">카테고리 사이즈</th>
                 <th className="px-3 py-2.5 text-left w-36">색상</th>
                 <th className="px-3 py-2.5 text-left w-36">사이즈</th>
                 <th className="px-3 py-2.5 text-right w-24">일반가</th>
+                <th className="px-3 py-2.5 text-right w-20">세일률(%)</th>
+                <th className="px-3 py-2.5 text-right w-24">세일가</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -479,12 +491,30 @@ export default function BulkImportPage() {
                         onChange={e => updateProduct(absIdx, 'brand', e.target.value)}
                       />
                     </td>
+                    {/* 카테고리 분류 (editable) */}
+                    <td className="px-3 py-2">
+                      <input
+                        className="w-full text-xs border-0 bg-transparent focus:bg-white focus:border focus:border-primary-300 focus:rounded px-1 outline-none"
+                        placeholder="의류/아이템"
+                        value={p.categoryGroup}
+                        onChange={e => updateProduct(absIdx, 'categoryGroup', e.target.value)}
+                      />
+                    </td>
                     {/* 카테고리 (editable) */}
                     <td className="px-3 py-2">
                       <input
                         className="w-full text-xs border-0 bg-transparent focus:bg-white focus:border focus:border-primary-300 focus:rounded px-1 outline-none"
                         value={p.categoryName}
                         onChange={e => updateProduct(absIdx, 'categoryName', e.target.value)}
+                      />
+                    </td>
+                    {/* 카테고리 사이즈 (editable) */}
+                    <td className="px-3 py-2">
+                      <input
+                        className="w-full text-xs border-0 bg-transparent focus:bg-white focus:border focus:border-primary-300 focus:rounded px-1 outline-none"
+                        placeholder="선택 안 함"
+                        value={p.sizeCategoryName}
+                        onChange={e => updateProduct(absIdx, 'sizeCategoryName', e.target.value)}
                       />
                     </td>
                     {/* 색상 */}
@@ -506,6 +536,26 @@ export default function BulkImportPage() {
                         className="w-20 text-xs text-right border-0 bg-transparent focus:bg-white focus:border focus:border-primary-300 focus:rounded px-1 outline-none"
                         value={p.price}
                         onChange={e => updateProduct(absIdx, 'price', Number(e.target.value))}
+                      />
+                    </td>
+                    {/* 세일률 (editable) */}
+                    <td className="px-3 py-2 text-right">
+                      <input
+                        type="number"
+                        className="w-16 text-xs text-right border-0 bg-transparent focus:bg-white focus:border focus:border-primary-300 focus:rounded px-1 outline-none"
+                        value={p.saleRate || ''}
+                        placeholder="-"
+                        onChange={e => updateProduct(absIdx, 'saleRate', Number(e.target.value))}
+                      />
+                    </td>
+                    {/* 세일가 (editable) */}
+                    <td className="px-3 py-2 text-right">
+                      <input
+                        type="number"
+                        className="w-20 text-xs text-right border-0 bg-transparent focus:bg-white focus:border focus:border-primary-300 focus:rounded px-1 outline-none"
+                        value={p.salePrice || ''}
+                        placeholder="-"
+                        onChange={e => updateProduct(absIdx, 'salePrice', Number(e.target.value))}
                       />
                     </td>
                   </tr>

@@ -3,20 +3,52 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { BrandCombobox } from '@/components/BrandCombobox';
 import { DEALER_GRADE_LABELS, DEALER_GRADE_ORDER, calcFinalPrice } from '@/lib/utils';
+import { CATEGORY_GROUPS } from '@/lib/categoryGroups';
 
 const EMPTY_PRICES = DEALER_GRADE_ORDER.reduce((acc, g) => ({ ...acc, [g]: '' }), {} as Record<string, string>);
+const MAX_MAIN_IMAGES = 10;
+
+function uploadFilesXHR(files: File[], onProgress: (pct: number) => void): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const fd = new FormData();
+    files.forEach((f) => fd.append('files', f));
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload');
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try { resolve(JSON.parse(xhr.responseText).urls); }
+        catch { reject(new Error('업로드 응답 처리 실패')); }
+      } else {
+        reject(new Error(`업로드 실패 (${xhr.status})`));
+      }
+    };
+    xhr.onerror = () => reject(new Error('업로드 중 네트워크 오류'));
+    xhr.send(fd);
+  });
+}
+
+const MAIN_CATEGORY_GROUPS = [
+  { key: 'clothing' as const, label: '👗 의류', slugs: CATEGORY_GROUPS.find((g) => g.key === 'clothing')!.slugs as readonly string[] },
+  { key: 'item'     as const, label: '👟 아이템', slugs: CATEGORY_GROUPS.find((g) => g.key === 'item')!.slugs as readonly string[] },
+];
+const SIZE_CATEGORY_SLUGS = CATEGORY_GROUPS.find((g) => g.key === 'size')!.slugs as readonly string[];
 
 export default function NewProductPage() {
   const router = useRouter();
   const imgRef     = useRef<HTMLInputElement>(null);
   const sizeImgRef = useRef<HTMLInputElement>(null);
 
-  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
+  const [categories, setCategories] = useState<{ id: string; name: string; slug: string }[]>([]);
+  const [categoryGroup, setCategoryGroup] = useState<'clothing' | 'item' | ''>('');
   const [form, setForm] = useState({
     name: '', description: '', stock: '',
-    categoryId: '', brand: '', productNumber: '', material: '', gender: '공용',
-    productType: '', season: '', remark: '',
+    categoryId: '', sizeCategoryId: '', brand: '', productNumber: '', material: '', gender: '공용',
+    season: '', remark: '',
     isOnSale: false,
+    isCarryOver: false,
     sizes: [] as string[], colors: [] as string[],
   });
   const [prices, setPrices]         = useState<Record<string, string>>(EMPTY_PRICES);
@@ -31,7 +63,9 @@ export default function NewProductPage() {
   const [colorInput, setColorInput] = useState('');
   const [loading, setLoading]       = useState(false);
   const [uploading, setUploading]   = useState(false);
-  const [variantStocks, setVariantStocks] = useState<Record<string, string>>({});
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [variantStocks, setVariantStocks]       = useState<Record<string, string>>({});
+  const [sizeExtraPrices, setSizeExtraPrices]   = useState<Record<string, string>>({});
 
   useEffect(() => {
     fetch('/api/products/categories').then((r) => r.json()).then(setCategories);
@@ -45,7 +79,7 @@ export default function NewProductPage() {
       for (const color of form.colors) {
         for (const size of form.sizes) {
           const key = `${color}::${size}`;
-          next[key] = prev[key] ?? '0';
+          next[key] = prev[key] ?? '';
         }
       }
       return next;
@@ -55,6 +89,10 @@ export default function NewProductPage() {
 
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
   const regularPrice = Number(prices.REGULAR) || 0;
+
+  const activeGroupSlugs = categoryGroup ? MAIN_CATEGORY_GROUPS.find((g) => g.key === categoryGroup)!.slugs : [];
+  const subCategories  = activeGroupSlugs.map((slug) => categories.find((c) => c.slug === slug)).filter(Boolean) as { id: string; name: string; slug: string }[];
+  const sizeCategories = SIZE_CATEGORY_SLUGS.map((slug) => categories.find((c) => c.slug === slug)).filter(Boolean) as { id: string; name: string; slug: string }[];
 
   const handleRateChange = (val: string) => {
     setSaleRateStr(val);
@@ -76,17 +114,41 @@ export default function NewProductPage() {
 
   const uploadFiles = async (files: FileList | null, target: 'main' | 'size') => {
     if (!files || !files.length) return;
+    let fileList = Array.from(files);
+
+    if (target === 'main') {
+      const remaining = MAX_MAIN_IMAGES - images.length;
+      if (remaining <= 0) { alert(`상품 사진은 최대 ${MAX_MAIN_IMAGES}장까지 업로드할 수 있습니다.`); return; }
+      if (fileList.length > remaining) {
+        alert(`상품 사진은 최대 ${MAX_MAIN_IMAGES}장까지 업로드할 수 있어 앞의 ${remaining}장만 업로드합니다.`);
+        fileList = fileList.slice(0, remaining);
+      }
+    }
+
     setUploading(true);
-    const fd = new FormData();
-    Array.from(files).forEach((f) => fd.append('files', f));
-    const res = await fetch('/api/upload', { method: 'POST', body: fd });
-    const { urls } = await res.json();
-    if (target === 'main') setImages((p) => [...p, ...urls]);
-    else setSizeImages((p) => [...p, ...urls]);
-    setUploading(false);
+    setUploadProgress(0);
+    try {
+      const urls = await uploadFilesXHR(fileList, setUploadProgress);
+      if (target === 'main') setImages((p) => [...p, ...urls]);
+      else setSizeImages((p) => [...p, ...urls]);
+    } catch (e: any) {
+      alert(e.message || '업로드 실패');
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+    }
   };
 
-  const addSize  = () => { if (sizeInput  && !form.sizes.includes(sizeInput))   { set('sizes',  [...form.sizes,  sizeInput]);  setSizeInput('');  } };
+  const addSize = () => {
+    if (sizeInput && !form.sizes.includes(sizeInput)) {
+      set('sizes', [...form.sizes, sizeInput]);
+      setSizeInput('');
+    }
+  };
+  const removeSize = (s: string) => {
+    set('sizes', form.sizes.filter((x) => x !== s));
+    setSizeExtraPrices((prev) => { const next = { ...prev }; delete next[s]; return next; });
+  };
   const addColor = () => { if (colorInput && !form.colors.includes(colorInput)) { set('colors', [...form.colors, colorInput]); setColorInput(''); } };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -98,24 +160,33 @@ export default function NewProductPage() {
 
     const saleValue = saleType === 'RATE' ? Number(saleRateStr) : Number(saleAmountStr);
 
+    /* 재고칸을 비워두면 500장으로 자동 저장, 명시적으로 입력한 값(0 포함)은 그대로 저장 */
     const variants = Object.entries(variantStocks).map(([key, stock]) => {
       const [color, size] = key.split('::');
-      return { color, size, stock: Number(stock || 0) };
+      return { color, size, stock: stock === '' ? 500 : Number(stock) };
     });
+
+    const extraPricesObj = Object.fromEntries(
+      Object.entries(sizeExtraPrices)
+        .filter(([, v]) => v !== '' && Number(v) > 0)
+        .map(([k, v]) => [k, Number(v)])
+    );
 
     const res = await fetch('/api/products', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...form,
-        stock:     Number(form.stock),
-        isOnSale:  form.isOnSale,
-        saleType:  form.isOnSale && saleValue ? saleType : null,
-        saleValue: form.isOnSale && saleValue ? saleValue : null,
-        images:    images.length ? images : ['https://placehold.co/400x400/EFF6FF/2563EB?text=상품'],
+        stock:           Number(form.stock),
+        isOnSale:        form.isOnSale,
+        isCarryOver:     form.isCarryOver,
+        saleType:        form.isOnSale && saleValue ? saleType : null,
+        saleValue:       form.isOnSale && saleValue ? saleValue : null,
+        images:          images.length ? images : ['https://placehold.co/400x400/EFF6FF/2563EB?text=상품'],
         sizeImages,
-        prices:    gradePrices,
+        prices:          gradePrices,
         variants,
+        sizeExtraPrices: Object.keys(extraPricesObj).length ? extraPricesObj : null,
       }),
     });
     if (res.ok) router.push('/admin/products');
@@ -160,14 +231,26 @@ export default function NewProductPage() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">종류</label>
-              <input className="input text-sm" placeholder="예: 외투/조끼" value={form.productType} onChange={(e) => set('productType', e.target.value)} />
+              <label className="block text-xs font-medium text-slate-600 mb-1">카테고리 대분류 *</label>
+              <select className="input text-sm" value={categoryGroup}
+                onChange={(e) => { setCategoryGroup(e.target.value as 'clothing' | 'item' | ''); set('categoryId', ''); }} required>
+                <option value="">대분류 선택</option>
+                {MAIN_CATEGORY_GROUPS.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
+              </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">카테고리 *</label>
-              <select className="input text-sm" value={form.categoryId} onChange={(e) => set('categoryId', e.target.value)} required>
-                <option value="">카테고리 선택</option>
-                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <label className="block text-xs font-medium text-slate-600 mb-1">카테고리 소분류 *</label>
+              <select className="input text-sm" value={form.categoryId} onChange={(e) => set('categoryId', e.target.value)}
+                required disabled={!categoryGroup}>
+                <option value="">{categoryGroup ? '소분류 선택' : '대분류를 먼저 선택하세요'}</option>
+                {subCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">사이즈 카테고리</label>
+              <select className="input text-sm" value={form.sizeCategoryId} onChange={(e) => set('sizeCategoryId', e.target.value)}>
+                <option value="">선택 안 함</option>
+                {sizeCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
           </div>
@@ -230,6 +313,10 @@ export default function NewProductPage() {
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={form.isOnSale} onChange={(e) => set('isOnSale', e.target.checked)} className="w-4 h-4 accent-red-500" />
               <span className="text-sm font-semibold text-slate-700">SALE 적용</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={form.isCarryOver} onChange={(e) => set('isCarryOver', e.target.checked)} className="w-4 h-4 accent-amber-500" />
+              <span className="text-sm font-semibold text-slate-700">이월상품</span>
             </label>
 
             {form.isOnSale && (
@@ -301,11 +388,36 @@ export default function NewProductPage() {
             <div className="flex flex-wrap gap-1">
               {form.sizes.map((s) => (
                 <span key={s} className="badge bg-primary-100 text-primary-700 gap-1 text-xs">
-                  {s}<button type="button" onClick={() => set('sizes', form.sizes.filter((x) => x !== s))} className="ml-1">×</button>
+                  {s}<button type="button" onClick={() => removeSize(s)} className="ml-1">×</button>
                 </span>
               ))}
             </div>
           </div>
+
+          {/* 사이즈별 추가 가격 */}
+          {form.sizes.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-2">사이즈별 추가 가격 <span className="font-normal text-slate-400">(비어있으면 추가 없음)</span></label>
+              <div className="grid grid-cols-2 gap-2">
+                {form.sizes.map((s) => (
+                  <div key={s} className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-600 w-12 flex-shrink-0">{s}</span>
+                    <div className="relative flex-1">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs">+</span>
+                      <input
+                        type="number" min="0" step="100"
+                        className="input text-sm pl-5"
+                        placeholder="0"
+                        value={sizeExtraPrices[s] ?? ''}
+                        onChange={(e) => setSizeExtraPrices((prev) => ({ ...prev, [s]: e.target.value }))}
+                      />
+                    </div>
+                    <span className="text-xs text-slate-400">원</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">색상</label>
             <div className="flex gap-2 mb-2">
@@ -324,7 +436,7 @@ export default function NewProductPage() {
           {/* 재고 그리드 */}
           {form.colors.length > 0 && form.sizes.length > 0 ? (
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-2">재고 (색상 × 사이즈)</label>
+              <label className="block text-xs font-medium text-slate-600 mb-2">재고 (색상 × 사이즈) <span className="font-normal text-slate-400">— 비워두면 500장으로 자동 저장</span></label>
               <div className="overflow-x-auto">
                 <table className="text-xs border-collapse">
                   <thead>
@@ -345,8 +457,9 @@ export default function NewProductPage() {
                             <td key={size} className="border border-slate-200 p-1 text-center">
                               <input
                                 type="number" min="0"
-                                className="w-16 text-center text-sm focus:outline-none focus:bg-primary-50 rounded p-1"
-                                value={variantStocks[key] ?? '0'}
+                                placeholder="500"
+                                className="w-16 text-center text-sm focus:outline-none focus:bg-primary-50 rounded p-1 placeholder:text-slate-300"
+                                value={variantStocks[key] ?? ''}
                                 onChange={(e) => setVariantStocks((prev) => ({ ...prev, [key]: e.target.value }))}
                               />
                             </td>
@@ -367,9 +480,9 @@ export default function NewProductPage() {
         <div className="card p-6 space-y-4">
           <h2 className="text-sm font-bold text-slate-700 border-b border-slate-100 pb-2">이미지</h2>
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-2">상품 사진</label>
+            <label className="block text-xs font-medium text-slate-600 mb-2">상품 사진 ({images.length}/{MAX_MAIN_IMAGES})</label>
             <input ref={imgRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => uploadFiles(e.target.files, 'main')} />
-            <button type="button" onClick={() => imgRef.current?.click()} disabled={uploading} className="btn-outline text-sm mb-3">{uploading ? '업로드 중...' : '사진 업로드'}</button>
+            <button type="button" onClick={() => imgRef.current?.click()} disabled={uploading || images.length >= MAX_MAIN_IMAGES} className="btn-outline text-sm mb-3">{uploading ? `업로드 중... ${uploadProgress}%` : '사진 업로드'}</button>
             {images.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {images.map((img, i) => (
@@ -384,7 +497,7 @@ export default function NewProductPage() {
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-2">사이즈 상세 이미지</label>
             <input ref={sizeImgRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => uploadFiles(e.target.files, 'size')} />
-            <button type="button" onClick={() => sizeImgRef.current?.click()} disabled={uploading} className="btn-outline text-sm mb-3">{uploading ? '업로드 중...' : '사이즈 상세 사진 업로드'}</button>
+            <button type="button" onClick={() => sizeImgRef.current?.click()} disabled={uploading} className="btn-outline text-sm mb-3">{uploading ? `업로드 중... ${uploadProgress}%` : '사이즈 상세 사진 업로드'}</button>
             {sizeImages.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {sizeImages.map((img, i) => (

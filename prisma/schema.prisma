@@ -10,6 +10,7 @@ datasource db {
 enum Role {
   USER
   ADMIN
+  SUB_ADMIN
 }
 
 enum DealerGrade {
@@ -43,9 +44,15 @@ enum QnAStatus {
   CLOSED
 }
 
+enum NoticeType {
+  MANUAL
+  SALE
+  CARRYOVER
+}
+
 model User {
-  id             String        @id @default(cuid())
-  email          String        @unique
+  id             String           @id @default(cuid())
+  email          String           @unique
   password       String
   name           String
   phone          String?
@@ -54,27 +61,39 @@ model User {
   shippingPhone  String?
   shopName       String?
   businessNumber String?
-  role           Role          @default(USER)
-  dealerGrade    DealerGrade   @default(REGULAR)
-  isActive       Boolean       @default(true)
-  depositAmount  Float         @default(0)
+  shopSiteUrl    String?
+  country        String?
+  role           Role             @default(USER)
+  dealerGrade    DealerGrade      @default(REGULAR)
+  isActive       Boolean          @default(true)
+  depositAmount  Float            @default(0)
   orders         Order[]
   cart           CartItem[]
   wishlist       Wishlist[]
+  favoriteBrands FavoriteBrand[]
   reviews        Review[]
   transactions   Transaction[]
   qna            QnA[]
   shipping       Shipping[]
   inbounds       Inbound[]
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  noticeSeens    NoticeSeen[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 }
 
 model Category {
-  id       String    @id @default(cuid())
-  name     String
-  slug     String    @unique
-  products Product[]
+  id           String    @id @default(cuid())
+  name         String
+  slug         String    @unique
+  name_en      String?
+  name_vi      String?
+  name_th      String?
+  name_ru      String?
+  name_mn      String?
+  name_es      String?
+  translatedAt DateTime?
+  products     Product[]
+  sizeProducts Product[] @relation("ProductSizeCategory")
 }
 
 model Product {
@@ -90,13 +109,56 @@ model Product {
   productType    String?
   wholesalePrice Int?
   season         String?
-  sizeImages     String[]
-  isOnSale  Boolean   @default(false)
+
+  // 자동 번역 필드 (Google Cloud Translation API) — 없으면 한국어 원본으로 폴백
+  name_en        String?
+  name_vi        String?
+  name_th        String?
+  name_ru        String?
+  name_mn        String?
+  name_es        String?
+  description_en String?  @db.Text
+  description_vi String?  @db.Text
+  description_th String?  @db.Text
+  description_ru String?  @db.Text
+  description_mn String?  @db.Text
+  description_es String?  @db.Text
+  material_en    String?
+  material_vi    String?
+  material_th    String?
+  material_ru    String?
+  material_mn    String?
+  material_es    String?
+  gender_en      String?
+  gender_vi      String?
+  gender_th      String?
+  gender_ru      String?
+  gender_mn      String?
+  gender_es      String?
+  season_en      String?
+  season_vi      String?
+  season_th      String?
+  season_ru      String?
+  season_mn      String?
+  season_es      String?
+  colors_en      String[]
+  colors_vi      String[]
+  colors_th      String[]
+  colors_ru      String[]
+  colors_mn      String[]
+  colors_es      String[]
+  translatedAt   DateTime?
+  sizeImages      String[]
+  sizeExtraPrices Json?
+  isOnSale    Boolean   @default(false)
+  isCarryOver Boolean   @default(false)
   saleType  SaleType?
   saleValue Int?
   prices    ProductPrice[]
-  categoryId     String
-  category       Category         @relation(fields: [categoryId], references: [id])
+  categoryId     String?
+  category       Category?        @relation(fields: [categoryId], references: [id])
+  sizeCategoryId String?
+  sizeCategory   Category?        @relation("ProductSizeCategory", fields: [sizeCategoryId], references: [id])
   sizes          String[]
   colors         String[]
   stock          Int              @default(0)
@@ -111,6 +173,9 @@ model Product {
   variants       ProductVariant[]
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
+
+  @@index([categoryId])
+  @@index([sizeCategoryId])
 }
 
 model ProductVariant {
@@ -139,6 +204,10 @@ model Order {
   shipping        Shipping?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([userId])
 }
 
 model OrderItem {
@@ -151,12 +220,26 @@ model OrderItem {
   price        Int
   size         String
   color        String
-  arrivedAt    DateTime?
-  cancelledAt  DateTime?
-  outOfStockAt DateTime?
-  unshippedAt  DateTime?
-  remark       String?
-  cancelLocked Boolean   @default(false)
+  confirmedAt             DateTime?
+  arrivedAt               DateTime?
+  cancelledAt             DateTime?
+  cancelledByAdmin        Boolean   @default(false)
+  outOfStockAt            DateTime?
+  unshippedAt             DateTime?
+  deliveryRequestedAt     DateTime?
+  remark                  String?
+  cancelLocked            Boolean   @default(false)
+  stockSnapshot           Int?
+  isOnSale                Boolean   @default(false)
+  saleType                SaleType?
+  saleValue               Int?
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([arrivedAt])
+  @@index([outOfStockAt])
+  @@index([unshippedAt])
+  @@index([cancelledAt])
 }
 
 model CartItem {
@@ -204,6 +287,10 @@ model Transaction {
   note        String?
   date        DateTime        @default(now())
   createdAt   DateTime        @default(now())
+
+  @@index([userId])
+  @@index([date])
+  @@index([type])
 }
 
 model Shipping {
@@ -230,6 +317,7 @@ model QnA {
   status     QnAStatus @default(PENDING)
   answer     String?   @db.Text
   answeredAt DateTime?
+  answerSeen Boolean   @default(true)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 }
@@ -247,6 +335,16 @@ model Brand {
   updatedAt   DateTime @updatedAt
 }
 
+model FavoriteBrand {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brandName String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, brandName])
+}
+
 model CancelPolicy {
   id            String   @id @default(cuid())
   globalEnabled Boolean  @default(false)
@@ -254,6 +352,14 @@ model CancelPolicy {
   cancelFrom    String?  // "HH:MM" KST
   cancelTo      String?  // "HH:MM" KST
   updatedAt     DateTime @updatedAt
+}
+
+model DeliveryPolicy {
+  id        String   @id @default(cuid())
+  fromTime  String?  // "HH:MM" KST
+  toTime    String?  // "HH:MM" KST
+  enabled   Boolean  @default(false)
+  updatedAt DateTime @updatedAt
 }
 
 model ProductPrice {
@@ -277,15 +383,60 @@ model Inbound {
   createdAt DateTime      @default(now())
 }
 
+model Notice {
+  id        String     @id @default(cuid())
+  type      NoticeType @default(MANUAL)
+  title     String
+  content   String     @db.Text
+  isActive  Boolean    @default(true)
+  brandName String?
+  itemCount Int        @default(1)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  // 수동 공지(MANUAL) 자동 번역 필드 (Google Cloud Translation API) — 없으면 한국어 원본으로 폴백
+  title_en        String?
+  title_vi        String?
+  title_th        String?
+  title_ru        String?
+  title_mn        String?
+  title_es        String?
+  content_en      String?  @db.Text
+  content_vi      String?  @db.Text
+  content_th      String?  @db.Text
+  content_ru      String?  @db.Text
+  content_mn      String?  @db.Text
+  content_es      String?  @db.Text
+  translatedAt    DateTime?
+
+  seenBy          NoticeSeen[]
+}
+
+model NoticeSeen {
+  id       String   @id @default(cuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  noticeId String
+  notice   Notice   @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+  seenAt   DateTime @default(now())
+
+  @@unique([userId, noticeId])
+}
+
 model InboundItem {
   id        String    @id @default(cuid())
   inboundId String
   inbound   Inbound   @relation(fields: [inboundId], references: [id], onDelete: Cascade)
-  productId String?
-  product   Product?  @relation(fields: [productId], references: [id])
-  name      String
-  quantity  Int
-  size      String?
-  color     String?
-  shippedAt DateTime?
+  productId           String?
+  product             Product?  @relation(fields: [productId], references: [id])
+  name                String
+  quantity            Int
+  size                String?
+  color               String?
+  price               Int?
+  shippedAt           DateTime?
+  deliveryRequestedAt DateTime?
+  isOnSale            Boolean   @default(false)
+  saleType            SaleType?
+  saleValue           Int?
 }

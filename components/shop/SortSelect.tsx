@@ -1,6 +1,8 @@
 'use client';
+import { useTranslation } from 'react-i18next';
 
 export default function SortSelect({ defaultValue }: { defaultValue?: string }) {
+  const { t } = useTranslation();
   return (
     <select
       className="input w-auto text-sm"
@@ -11,9 +13,9 @@ export default function SortSelect({ defaultValue }: { defaultValue?: string }) 
         window.location.href = u.toString();
       }}
     >
-      <option value="newest">최신순</option>
-      <option value="price_asc">가격 낮은순</option>
-      <option value="price_desc">가격 높은순</option>
+      <option value="newest">{t('products.sortNewest')}</option>
+      <option value="price_asc">{t('products.sortPriceAsc')}</option>
+      <option value="price_desc">{t('products.sortPriceDesc')}</option>
     </select>
   );
 }

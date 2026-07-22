@@ -3,8 +3,64 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { BrandCombobox } from '@/components/BrandCombobox';
 import { DEALER_GRADE_LABELS, DEALER_GRADE_ORDER, calcFinalPrice } from '@/lib/utils';
+import { CATEGORY_GROUPS } from '@/lib/categoryGroups';
 
 const EMPTY_PRICES = DEALER_GRADE_ORDER.reduce((acc, g) => ({ ...acc, [g]: '' }), {} as Record<string, string>);
+const MAX_MAIN_IMAGES = 10;
+
+function uploadFilesXHR(files: File[], onProgress: (pct: number) => void): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const fd = new FormData();
+    files.forEach((f) => fd.append('files', f));
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload');
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try { resolve(JSON.parse(xhr.responseText).urls); }
+        catch { reject(new Error('업로드 응답 처리 실패')); }
+      } else {
+        reject(new Error(`업로드 실패 (${xhr.status})`));
+      }
+    };
+    xhr.onerror = () => reject(new Error('업로드 중 네트워크 오류'));
+    xhr.send(fd);
+  });
+}
+
+const MAIN_CATEGORY_GROUPS = [
+  { key: 'clothing' as const, label: '👗 의류', slugs: CATEGORY_GROUPS.find((g) => g.key === 'clothing')!.slugs as readonly string[] },
+  { key: 'item'     as const, label: '👟 아이템', slugs: CATEGORY_GROUPS.find((g) => g.key === 'item')!.slugs as readonly string[] },
+];
+const SIZE_CATEGORY_SLUGS = CATEGORY_GROUPS.find((g) => g.key === 'size')!.slugs as readonly string[];
+
+const TRANS_LANGS = [
+  { code: 'en', label: 'English' },
+  { code: 'vi', label: 'Tiếng Việt' },
+  { code: 'th', label: 'ภาษาไทย' },
+  { code: 'ru', label: 'Русский' },
+  { code: 'mn', label: 'Монгол' },
+  { code: 'es', label: 'Español' },
+] as const;
+type TransLang = typeof TRANS_LANGS[number]['code'];
+type TransFields = { name: string; description: string; material: string; gender: string; season: string; colors: string };
+const EMPTY_TRANS: TransFields = { name: '', description: '', material: '', gender: '', season: '', colors: '' };
+
+function buildTranslationsFromProduct(product: any): Record<TransLang, TransFields> {
+  return TRANS_LANGS.reduce((acc, l) => ({
+    ...acc,
+    [l.code]: {
+      name:        product[`name_${l.code}`] || '',
+      description: product[`description_${l.code}`] || '',
+      material:    product[`material_${l.code}`] || '',
+      gender:      product[`gender_${l.code}`] || '',
+      season:      product[`season_${l.code}`] || '',
+      colors:      (product[`colors_${l.code}`] || []).join(', '),
+    },
+  }), {} as Record<TransLang, TransFields>);
+}
 
 export default function EditProductPage() {
   const router = useRouter();
@@ -12,12 +68,14 @@ export default function EditProductPage() {
   const imgRef     = useRef<HTMLInputElement>(null);
   const sizeImgRef = useRef<HTMLInputElement>(null);
 
-  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
+  const [categories, setCategories] = useState<{ id: string; name: string; slug: string }[]>([]);
+  const [categoryGroup, setCategoryGroup] = useState<'clothing' | 'item' | ''>('');
   const [form, setForm] = useState({
     name: '', description: '', stock: '',
-    categoryId: '', brand: '', productNumber: '', material: '', gender: '공용',
-    productType: '', season: '', remark: '',
+    categoryId: '', sizeCategoryId: '', brand: '', productNumber: '', material: '', gender: '공용',
+    season: '', remark: '',
     isOnSale: false,
+    isCarryOver: false,
     sizes: [] as string[], colors: [] as string[], isActive: true,
   });
   const [prices, setPrices]               = useState<Record<string, string>>(EMPTY_PRICES);
@@ -30,8 +88,17 @@ export default function EditProductPage() {
   const [colorInput, setColorInput] = useState('');
   const [loading, setLoading]       = useState(false);
   const [uploading, setUploading]   = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [fetching, setFetching]     = useState(true);
-  const [variantStocks, setVariantStocks] = useState<Record<string, string>>({});
+  const [variantStocks, setVariantStocks]       = useState<Record<string, string>>({});
+  const [sizeExtraPrices, setSizeExtraPrices]   = useState<Record<string, string>>({});
+
+  const [translations, setTranslations] = useState<Record<TransLang, TransFields>>(
+    () => TRANS_LANGS.reduce((acc, l) => ({ ...acc, [l.code]: EMPTY_TRANS }), {} as Record<TransLang, TransFields>)
+  );
+  const [activeTransLang, setActiveTransLang] = useState<TransLang>('en');
+  const [retranslating, setRetranslating]     = useState(false);
+  const [translatedAt, setTranslatedAt]       = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -39,18 +106,21 @@ export default function EditProductPage() {
       fetch(`/api/products/${id}`).then((r) => r.json()),
     ]).then(([cats, product]) => {
       setCategories(cats);
+      const currentGroup = MAIN_CATEGORY_GROUPS.find((g) => g.slugs.includes(product.category?.slug))?.key ?? '';
+      setCategoryGroup(currentGroup);
       setForm({
         name:          product.name || '',
         description:   product.description || '',
         stock:         String(product.stock || ''),
         categoryId:    product.categoryId || '',
+        sizeCategoryId: product.sizeCategoryId || '',
         brand:         product.brand || '',
         productNumber: product.productNumber || '',
         material:      product.material || '',
         gender:        product.gender || '공용',
-        productType:   product.productType || '',
         season:        product.season || '',
         isOnSale:      product.isOnSale || false,
+        isCarryOver:   product.isCarryOver || false,
         sizes:         product.sizes || [],
         colors:        product.colors || [],
         isActive:      product.isActive !== false,
@@ -81,6 +151,15 @@ export default function EditProductPage() {
       setImages(product.images || []);
       setSizeImages(product.sizeImages || []);
 
+      // 기존 사이즈별 추가 가격 복원
+      if (product.sizeExtraPrices) {
+        const ep: Record<string, string> = {};
+        Object.entries(product.sizeExtraPrices as Record<string, number>).forEach(([k, v]) => {
+          ep[k] = String(v);
+        });
+        setSizeExtraPrices(ep);
+      }
+
       // 기존 variants 불러오기
       const variantMap: Record<string, string> = {};
       (product.variants || []).forEach((v: { color: string; size: string; stock: number }) => {
@@ -88,12 +167,22 @@ export default function EditProductPage() {
       });
       setVariantStocks(variantMap);
 
+      setTranslations(buildTranslationsFromProduct(product));
+      setTranslatedAt(product.translatedAt || null);
+
       setFetching(false);
     });
   }, [id]);
 
+  const setTrans = (lang: TransLang, key: keyof TransFields, value: string) =>
+    setTranslations((prev) => ({ ...prev, [lang]: { ...prev[lang], [key]: value } }));
+
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
   const regularPrice = Number(prices.REGULAR) || 0;
+
+  const activeGroupSlugs = categoryGroup ? MAIN_CATEGORY_GROUPS.find((g) => g.key === categoryGroup)!.slugs : [];
+  const subCategories  = activeGroupSlugs.map((slug) => categories.find((c) => c.slug === slug)).filter(Boolean) as { id: string; name: string; slug: string }[];
+  const sizeCategories = SIZE_CATEGORY_SLUGS.map((slug) => categories.find((c) => c.slug === slug)).filter(Boolean) as { id: string; name: string; slug: string }[];
 
   // 색상/사이즈 변경 시 재고 그리드 동기화
   useEffect(() => {
@@ -129,17 +218,41 @@ export default function EditProductPage() {
 
   const uploadFiles = async (files: FileList | null, target: 'main' | 'size') => {
     if (!files || !files.length) return;
+    let fileList = Array.from(files);
+
+    if (target === 'main') {
+      const remaining = MAX_MAIN_IMAGES - images.length;
+      if (remaining <= 0) { alert(`상품 사진은 최대 ${MAX_MAIN_IMAGES}장까지 업로드할 수 있습니다.`); return; }
+      if (fileList.length > remaining) {
+        alert(`상품 사진은 최대 ${MAX_MAIN_IMAGES}장까지 업로드할 수 있어 앞의 ${remaining}장만 업로드합니다.`);
+        fileList = fileList.slice(0, remaining);
+      }
+    }
+
     setUploading(true);
-    const fd = new FormData();
-    Array.from(files).forEach((f) => fd.append('files', f));
-    const res = await fetch('/api/upload', { method: 'POST', body: fd });
-    const { urls } = await res.json();
-    if (target === 'main') setImages((p) => [...p, ...urls]);
-    else setSizeImages((p) => [...p, ...urls]);
-    setUploading(false);
+    setUploadProgress(0);
+    try {
+      const urls = await uploadFilesXHR(fileList, setUploadProgress);
+      if (target === 'main') setImages((p) => [...p, ...urls]);
+      else setSizeImages((p) => [...p, ...urls]);
+    } catch (e: any) {
+      alert(e.message || '업로드 실패');
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+    }
   };
 
-  const addSize  = () => { if (sizeInput  && !form.sizes.includes(sizeInput))   { set('sizes',  [...form.sizes,  sizeInput]);  setSizeInput('');  } };
+  const addSize = () => {
+    if (sizeInput && !form.sizes.includes(sizeInput)) {
+      set('sizes', [...form.sizes, sizeInput]);
+      setSizeInput('');
+    }
+  };
+  const removeSize = (s: string) => {
+    set('sizes', form.sizes.filter((x) => x !== s));
+    setSizeExtraPrices((prev) => { const next = { ...prev }; delete next[s]; return next; });
+  };
   const addColor = () => { if (colorInput && !form.colors.includes(colorInput)) { set('colors', [...form.colors, colorInput]); setColorInput(''); } };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -156,23 +269,64 @@ export default function EditProductPage() {
       return { color, size, stock: Number(stock || 0) };
     });
 
+    const extraPricesObj = Object.fromEntries(
+      Object.entries(sizeExtraPrices)
+        .filter(([, v]) => v !== '' && Number(v) > 0)
+        .map(([k, v]) => [k, Number(v)])
+    );
+
+    const translationFields = TRANS_LANGS.reduce((acc, l) => {
+      const t = translations[l.code];
+      acc[`name_${l.code}`]        = t.name || null;
+      acc[`description_${l.code}`] = t.description || null;
+      acc[`material_${l.code}`]    = t.material || null;
+      acc[`gender_${l.code}`]      = t.gender || null;
+      acc[`season_${l.code}`]      = t.season || null;
+      acc[`colors_${l.code}`]      = t.colors.split(',').map((s) => s.trim()).filter(Boolean);
+      return acc;
+    }, {} as Record<string, any>);
+
     const res = await fetch(`/api/products/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...form,
-        stock:     Number(form.stock),
-        isOnSale:  form.isOnSale,
-        saleType:  form.isOnSale && saleValue ? saleType : null,
-        saleValue: form.isOnSale && saleValue ? saleValue : null,
-        images:    images.length ? images : ['https://placehold.co/400x400/EFF6FF/2563EB?text=상품'],
+        stock:           Number(form.stock),
+        isOnSale:        form.isOnSale,
+        isCarryOver:     form.isCarryOver,
+        saleType:        form.isOnSale && saleValue ? saleType : null,
+        saleValue:       form.isOnSale && saleValue ? saleValue : null,
+        images:          images.length ? images : ['https://placehold.co/400x400/EFF6FF/2563EB?text=상품'],
         sizeImages,
-        prices:    gradePrices,
+        prices:          gradePrices,
         variants,
+        sizeExtraPrices: Object.keys(extraPricesObj).length ? extraPricesObj : null,
+        ...translationFields,
       }),
     });
     if (res.ok) router.push('/admin/products');
-    else { alert('상품 수정에 실패했습니다.'); setLoading(false); }
+    else {
+      const errData = await res.json().catch(() => ({}));
+      alert(`상품 수정에 실패했습니다.\n${errData?.error || res.status}`);
+      setLoading(false);
+    }
+  };
+
+  const handleRetranslate = async () => {
+    setRetranslating(true);
+    try {
+      const res = await fetch(`/api/products/${id}/translate`, { method: 'POST' });
+      if (res.ok) {
+        const product = await res.json();
+        setTranslations(buildTranslationsFromProduct(product));
+        setTranslatedAt(product.translatedAt || null);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(`재번역에 실패했습니다.\n${err?.error || res.status}`);
+      }
+    } finally {
+      setRetranslating(false);
+    }
   };
 
   if (fetching) return <div className="text-center py-16 text-slate-400">로딩 중...</div>;
@@ -218,14 +372,26 @@ export default function EditProductPage() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">종류</label>
-              <input className="input text-sm" placeholder="예: 외투/조끼" value={form.productType} onChange={(e) => set('productType', e.target.value)} />
+              <label className="block text-xs font-medium text-slate-600 mb-1">카테고리 대분류 *</label>
+              <select className="input text-sm" value={categoryGroup}
+                onChange={(e) => { setCategoryGroup(e.target.value as 'clothing' | 'item' | ''); set('categoryId', ''); }} required>
+                <option value="">대분류 선택</option>
+                {MAIN_CATEGORY_GROUPS.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
+              </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">카테고리 *</label>
-              <select className="input text-sm" value={form.categoryId} onChange={(e) => set('categoryId', e.target.value)} required>
-                <option value="">카테고리 선택</option>
-                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <label className="block text-xs font-medium text-slate-600 mb-1">카테고리 소분류 *</label>
+              <select className="input text-sm" value={form.categoryId} onChange={(e) => set('categoryId', e.target.value)}
+                required disabled={!categoryGroup}>
+                <option value="">{categoryGroup ? '소분류 선택' : '대분류를 먼저 선택하세요'}</option>
+                {subCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">사이즈 카테고리</label>
+              <select className="input text-sm" value={form.sizeCategoryId} onChange={(e) => set('sizeCategoryId', e.target.value)}>
+                <option value="">선택 안 함</option>
+                {sizeCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
           </div>
@@ -287,6 +453,10 @@ export default function EditProductPage() {
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={form.isOnSale} onChange={(e) => set('isOnSale', e.target.checked)} className="w-4 h-4 accent-red-500" />
               <span className="text-sm font-semibold text-slate-700">SALE 적용</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={form.isCarryOver} onChange={(e) => set('isCarryOver', e.target.checked)} className="w-4 h-4 accent-amber-500" />
+              <span className="text-sm font-semibold text-slate-700">이월상품</span>
             </label>
 
             {form.isOnSale && (
@@ -360,11 +530,36 @@ export default function EditProductPage() {
             <div className="flex flex-wrap gap-1">
               {form.sizes.map((s) => (
                 <span key={s} className="badge bg-primary-100 text-primary-700 text-xs gap-1">
-                  {s}<button type="button" onClick={() => set('sizes', form.sizes.filter((x) => x !== s))} className="ml-1">×</button>
+                  {s}<button type="button" onClick={() => removeSize(s)} className="ml-1">×</button>
                 </span>
               ))}
             </div>
           </div>
+
+          {/* 사이즈별 추가 가격 */}
+          {form.sizes.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-2">사이즈별 추가 가격 <span className="font-normal text-slate-400">(비어있으면 추가 없음)</span></label>
+              <div className="grid grid-cols-2 gap-2">
+                {form.sizes.map((s) => (
+                  <div key={s} className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-600 w-12 flex-shrink-0">{s}</span>
+                    <div className="relative flex-1">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs">+</span>
+                      <input
+                        type="number" min="0" step="100"
+                        className="input text-sm pl-5"
+                        placeholder="0"
+                        value={sizeExtraPrices[s] ?? ''}
+                        onChange={(e) => setSizeExtraPrices((prev) => ({ ...prev, [s]: e.target.value }))}
+                      />
+                    </div>
+                    <span className="text-xs text-slate-400">원</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">색상</label>
             <div className="flex gap-2 mb-2">
@@ -422,13 +617,70 @@ export default function EditProductPage() {
           )}
         </div>
 
+        {/* 번역 관리 */}
+        <div className="card p-6 space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2 flex-wrap gap-2">
+            <h2 className="text-sm font-bold text-slate-700">🌐 번역 관리</h2>
+            <div className="flex items-center gap-2">
+              {translatedAt && <span className="text-xs text-slate-400">마지막 번역: {new Date(translatedAt).toLocaleString('ko-KR')}</span>}
+              <button type="button" onClick={handleRetranslate} disabled={retranslating}
+                className="btn-outline text-xs px-3 py-1.5 disabled:opacity-50">
+                {retranslating ? '재번역 중...' : '자동 재번역'}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-1">
+            {TRANS_LANGS.map((l) => (
+              <button key={l.code} type="button" onClick={() => setActiveTransLang(l.code)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${activeTransLang === l.code ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                {l.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-slate-600 mb-1">상품명</label>
+              <input className="input text-sm" value={translations[activeTransLang].name}
+                onChange={(e) => setTrans(activeTransLang, 'name', e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">소재</label>
+              <input className="input text-sm" value={translations[activeTransLang].material}
+                onChange={(e) => setTrans(activeTransLang, 'material', e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">성별</label>
+              <input className="input text-sm" value={translations[activeTransLang].gender}
+                onChange={(e) => setTrans(activeTransLang, 'gender', e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">시즌/컬렉션</label>
+              <input className="input text-sm" value={translations[activeTransLang].season}
+                onChange={(e) => setTrans(activeTransLang, 'season', e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">색상 (쉼표로 구분)</label>
+              <input className="input text-sm" value={translations[activeTransLang].colors}
+                onChange={(e) => setTrans(activeTransLang, 'colors', e.target.value)} />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-slate-600 mb-1">설명</label>
+              <textarea className="input text-sm min-h-20 resize-none" value={translations[activeTransLang].description}
+                onChange={(e) => setTrans(activeTransLang, 'description', e.target.value)} />
+            </div>
+          </div>
+          <p className="text-xs text-slate-400">저장을 누르면 이 탭에 입력된 내용이 함께 저장됩니다. 상품명/색상 등 한국어 원본을 수정하면 저장 시 자동으로 다시 번역되어 이 내용을 덮어씁니다.</p>
+        </div>
+
         {/* 이미지 */}
         <div className="card p-6 space-y-4">
           <h2 className="text-sm font-bold text-slate-700 border-b border-slate-100 pb-2">이미지</h2>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-2">상품 사진</label>
             <input ref={imgRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => uploadFiles(e.target.files, 'main')} />
-            <button type="button" onClick={() => imgRef.current?.click()} disabled={uploading} className="btn-outline text-sm mb-3">{uploading ? '업로드 중...' : '사진 추가'}</button>
+            <button type="button" onClick={() => imgRef.current?.click()} disabled={uploading || images.length >= MAX_MAIN_IMAGES} className="btn-outline text-sm mb-3">{uploading ? `업로드 중... ${uploadProgress}%` : `사진 추가 (${images.length}/${MAX_MAIN_IMAGES})`}</button>
             {images.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {images.map((img, i) => (
@@ -443,7 +695,7 @@ export default function EditProductPage() {
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-2">사이즈 상세 이미지</label>
             <input ref={sizeImgRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => uploadFiles(e.target.files, 'size')} />
-            <button type="button" onClick={() => sizeImgRef.current?.click()} disabled={uploading} className="btn-outline text-sm mb-3">{uploading ? '업로드 중...' : '사이즈 이미지 추가'}</button>
+            <button type="button" onClick={() => sizeImgRef.current?.click()} disabled={uploading} className="btn-outline text-sm mb-3">{uploading ? `업로드 중... ${uploadProgress}%` : '사이즈 이미지 추가'}</button>
             {sizeImages.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {sizeImages.map((img, i) => (

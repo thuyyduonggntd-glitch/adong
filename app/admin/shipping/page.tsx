@@ -15,21 +15,30 @@ type UnifiedItem = {
   image: string;
   brand: string;
   name: string;
+  productNumber?: string | null;
+  isOnSale?: boolean;
+  saleType?: string | null;
+  saleValue?: number | null;
   size: string;
   color: string;
   quantity: number;
   price: number | null;
+  deliveryRequestedAt: string | null;
   orderId?: string;
   inboundItemId?: string;
 };
+
+type DeliveryPolicy = { fromTime: string | null; toTime: string | null; enabled: boolean };
 
 type DateGroup = { date: string; items: UnifiedItem[] };
 type UserGroup = { userId: string; userName: string; userEmail: string; dateGroups: DateGroup[]; totalItems: number };
 
 /* ─── 배송완료: 주문기반 ─── */
+/* isOnSale 등: OrderItem 자체 스냅샷 (주문 당시 세일 상태). product.isOnSale은 실시간 값이라 사용하지 않음 */
 type DeliveredOrderItem = {
   id: string; quantity: number; price: number; size: string; color: string;
-  product: { name: string; brand: string | null; images: string[] };
+  isOnSale?: boolean; saleType?: string | null; saleValue?: number | null;
+  product: { name: string; brand: string | null; images: string[]; productNumber?: string | null };
 };
 type ShippingRecord = {
   id: string; orderId: string; userId: string;
@@ -47,6 +56,10 @@ type ShippedSupplierItem = {
   shippedAt: string;
   brand: string;
   name: string;
+  productNumber?: string | null;
+  isOnSale?: boolean;
+  saleType?: string | null;
+  saleValue?: number | null;
   size: string;
   color: string;
   quantity: number;
@@ -117,6 +130,12 @@ export default function AdminShippingPage() {
   const [supplierShipped, setSupShipped] = useState<ShippedSupplierItem[]>([]);
   const [loading, setLoading]            = useState(true);
 
+  /* 배송 정책 */
+  const [deliveryPolicy, setDeliveryPolicy] = useState<DeliveryPolicy>({ fromTime: null, toTime: null, enabled: false });
+  const [policyForm, setPolicyForm]         = useState({ fromTime: '', toTime: '' });
+  const [policyEnabled, setPolicyEnabled]   = useState(false);
+  const [savingPolicy, setSavingPolicy]     = useState(false);
+
   /* 보관중 선택 */
   const [selected, setSelected]    = useState<Set<string>>(new Set());
   const [converting, setConverting] = useState(false);
@@ -135,11 +154,19 @@ export default function AdminShippingPage() {
 
   /* ─ 데이터 로드 ─ */
   const loadData = async () => {
-    const [arrived, ships, inbounds] = await Promise.all([
+    const [arrived, ships, inbounds, policy] = await Promise.all([
       fetch('/api/orders/items?allArrived=1').then((r) => r.json()).catch(() => []),
       fetch('/api/shipping').then((r) => r.json()).catch(() => []),
       fetch('/api/inbound').then((r) => r.json()).catch(() => []),
+      fetch('/api/delivery-policy').then((r) => r.json()).catch(() => null),
     ]);
+
+    const pol: DeliveryPolicy = (policy && !policy.error)
+      ? policy
+      : { fromTime: null, toTime: null, enabled: false };
+    setDeliveryPolicy(pol);
+    setPolicyForm({ fromTime: pol.fromTime ?? '', toTime: pol.toTime ?? '' });
+    setPolicyEnabled(pol.enabled ?? false);
 
     /* 보관중: 주문 상품 — order.status가 SHIPPING/DELIVERED/CANCELLED 아닌 것 */
     const orderItems: UnifiedItem[] = (Array.isArray(arrived) ? arrived : [])
@@ -148,21 +175,26 @@ export default function AdminShippingPage() {
         return st !== 'SHIPPING' && st !== 'DELIVERED' && st !== 'CANCELLED';
       })
       .map((it: any) => ({
-        key:          `o-${it.id}`,
-        selId:        `o-${it.id}`,
-        source:       'order' as const,
-        userId:       it.order?.userId ?? '',
-        userName:     it.order?.user?.name ?? '알 수 없음',
-        userEmail:    it.order?.user?.email ?? '',
-        arrivedAt:    it.arrivedAt,
-        image:        it.product?.images?.[0] ?? '',
-        brand:        it.product?.brand ?? '-',
-        name:         it.product?.name  ?? '-',
-        size:         it.size  ?? '-',
-        color:        it.color ?? '-',
-        quantity:     it.quantity,
-        price:        it.price,
-        orderId:      it.order?.id,
+        key:                 `o-${it.id}`,
+        selId:               `o-${it.id}`,
+        source:              'order' as const,
+        userId:              it.order?.userId ?? '',
+        userName:            it.order?.user?.name ?? '알 수 없음',
+        userEmail:           it.order?.user?.email ?? '',
+        arrivedAt:           it.arrivedAt,
+        image:               it.product?.images?.[0] ?? '',
+        brand:               it.product?.brand ?? '-',
+        name:                it.product?.name  ?? '-',
+        productNumber:       it.product?.productNumber ?? null,
+        isOnSale:            it.isOnSale ?? false,
+        saleType:            it.saleType ?? null,
+        saleValue:           it.saleValue ?? null,
+        size:                it.size  ?? '-',
+        color:               it.color ?? '-',
+        quantity:            it.quantity,
+        price:               it.price,
+        deliveryRequestedAt: it.deliveryRequestedAt ?? null,
+        orderId:             it.order?.id,
       }));
 
     /* 보관중: 공급업체 상품(shippedAt 없는 것) & 배송완료: 공급업체(shippedAt 있는 것) */
@@ -178,6 +210,10 @@ export default function AdminShippingPage() {
           userEmail: ib.user.email,
           brand:     item.product?.brand ?? ib.brand,
           name:      item.product?.name  ?? item.name,
+          productNumber: item.product?.productNumber ?? null,
+          isOnSale:  item.isOnSale ?? false,
+          saleType:  item.saleType ?? null,
+          saleValue: item.saleValue ?? null,
           size:      item.size  ?? '-',
           color:     item.color ?? '-',
           quantity:  item.quantity,
@@ -186,7 +222,9 @@ export default function AdminShippingPage() {
         if (!item.shippedAt) {
           inboundPending.push({
             key: `i-${item.id}`, selId: `i-${item.id}`, source: 'inbound' as const,
-            arrivedAt: ib.arrivedAt, price: null, inboundItemId: item.id, ...common,
+            arrivedAt: ib.arrivedAt, price: null, inboundItemId: item.id,
+            deliveryRequestedAt: item.deliveryRequestedAt ?? null,
+            ...common,
           });
         } else {
           inboundShipped.push({ id: item.id, shippedAt: item.shippedAt, ...common });
@@ -203,6 +241,17 @@ export default function AdminShippingPage() {
 
   const storedGroups    = useMemo(() => buildStoredUserGroups(storedItems),              [storedItems]);
   const deliveredGroups = useMemo(() => buildDeliveredUserGroups(shippings, supplierShipped), [shippings, supplierShipped]);
+
+  const withinDeliveryWindow = useMemo(() => {
+    if (!deliveryPolicy.enabled || !deliveryPolicy.fromTime || !deliveryPolicy.toTime) return false;
+    const nowKst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    const cur    = nowKst.getUTCHours() * 60 + nowKst.getUTCMinutes();
+    const [fh, fm] = deliveryPolicy.fromTime.split(':').map(Number);
+    const [th, tm] = deliveryPolicy.toTime.split(':').map(Number);
+    const from = fh * 60 + fm;
+    const to   = th * 60 + tm;
+    return from <= to ? (cur >= from && cur <= to) : (cur >= from || cur <= to);
+  }, [deliveryPolicy]);
 
   /* ─ 선택 토글 ─ */
   const toggleItem = (selId: string) =>
@@ -277,6 +326,18 @@ export default function AdminShippingPage() {
     setSaving(null);
   };
 
+  /* ─ 배송 정책 저장 ─ */
+  const handleSavePolicy = async () => {
+    setSavingPolicy(true);
+    const res  = await fetch('/api/delivery-policy', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fromTime: policyForm.fromTime || null, toTime: policyForm.toTime || null, enabled: policyEnabled }),
+    });
+    const data = await res.json();
+    setDeliveryPolicy(data);
+    setSavingPolicy(false);
+  };
+
   const handleOpenDelDate = (key: string, firstShipping?: ShippingRecord) => {
     if (openDelDate === key) { setOpenDelDate(null); return; }
     setOpenDelDate(key);
@@ -309,7 +370,37 @@ export default function AdminShippingPage() {
 
       {/* ══════════ 보관중 ══════════ */}
       {tab === 'stored' && (
-        storedGroups.length === 0 ? (
+        <>
+          {/* 배송가능시간 설정 */}
+          <div className="card p-4 mb-4">
+            <div className="flex items-center gap-3 mb-3">
+              <h3 className="text-sm font-bold text-slate-700">배송가능시간 설정</h3>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" checked={policyEnabled} onChange={(e) => setPolicyEnabled(e.target.checked)} className="w-4 h-4 accent-primary-600" />
+                <span className="text-xs text-slate-600">활성화</span>
+              </label>
+              {deliveryPolicy.fromTime && deliveryPolicy.toTime && (
+                <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${withinDeliveryWindow ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                  {deliveryPolicy.fromTime} ~ {deliveryPolicy.toTime} {withinDeliveryWindow ? '(배송시간 중)' : '(배송시간 외)'}
+                </span>
+              )}
+            </div>
+            <div className="flex items-end gap-3 flex-wrap">
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">시작시간 (KST)</label>
+                <input type="time" className="input text-sm" value={policyForm.fromTime} onChange={(e) => setPolicyForm((f) => ({ ...f, fromTime: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">종료시간 (KST)</label>
+                <input type="time" className="input text-sm" value={policyForm.toTime} onChange={(e) => setPolicyForm((f) => ({ ...f, toTime: e.target.value }))} />
+              </div>
+              <button onClick={handleSavePolicy} disabled={savingPolicy} className="btn-primary text-sm py-2 px-5 disabled:opacity-50">
+                {savingPolicy ? '저장 중...' : '저장'}
+              </button>
+            </div>
+          </div>
+
+          {storedGroups.length === 0 ? (
           <div className="text-center py-20 text-slate-400">
             <div className="text-5xl mb-3">📦</div>
             <p className="font-medium">보관중인 상품이 없습니다.</p>
@@ -317,10 +408,11 @@ export default function AdminShippingPage() {
         ) : (
           <div className="space-y-3">
             {storedGroups.map((userG) => {
-              const allIds  = userG.dateGroups.flatMap((d) => d.items.map((i) => i.selId));
-              const allSel  = allIds.length > 0 && allIds.every((id) => selected.has(id));
-              const someSel = allIds.some((id) => selected.has(id));
-              const isOpen  = openUser === userG.userId;
+              const allIds    = userG.dateGroups.flatMap((d) => d.items.map((i) => i.selId));
+              const allSel    = allIds.length > 0 && allIds.every((id) => selected.has(id));
+              const someSel   = allIds.some((id) => selected.has(id));
+              const isOpen    = openUser === userG.userId;
+              const totalReq  = userG.dateGroups.reduce((s, d) => s + d.items.filter((i) => !!i.deliveryRequestedAt).length, 0);
 
               return (
                 <div key={userG.userId} className="card overflow-hidden">
@@ -338,6 +430,11 @@ export default function AdminShippingPage() {
                       <span className="text-xs text-slate-400 ml-2">{userG.userEmail}</span>
                     </div>
                     <span className="text-xs text-slate-500 flex-shrink-0">{userG.dateGroups.length}개 날짜 · {userG.totalItems}종</span>
+                    {totalReq > 0 && (
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-semibold flex-shrink-0 ${withinDeliveryWindow ? 'bg-amber-500 text-white' : 'bg-amber-100 text-amber-700'}`}>
+                        배송요청 {totalReq}
+                      </span>
+                    )}
                     <svg className={`w-4 h-4 text-slate-400 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
@@ -353,6 +450,7 @@ export default function AdminShippingPage() {
                         const dateHalf = dateIds.some((id) => selected.has(id));
                         const orderCnt = dateG.items.filter((i) => i.source === 'order').length;
                         const supCnt   = dateG.items.filter((i) => i.source === 'inbound').length;
+                        const reqCnt   = dateG.items.filter((i) => !!i.deliveryRequestedAt).length;
                         const totalQty = dateG.items.reduce((s, i) => s + i.quantity, 0);
                         const totalAmt = dateG.items.reduce((s, i) => s + (i.price ?? 0) * i.quantity, 0);
 
@@ -373,6 +471,11 @@ export default function AdminShippingPage() {
                               <span className="text-xs text-slate-500">{dateG.items.length}종 · {totalQty}개</span>
                               {orderCnt > 0 && <span className="text-xs bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded-full">주문 {orderCnt}</span>}
                               {supCnt   > 0 && <span className="text-xs bg-blue-50   text-blue-600   px-1.5 py-0.5 rounded-full">공급 {supCnt}</span>}
+                              {reqCnt   > 0 && (
+                                <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${withinDeliveryWindow ? 'bg-amber-500 text-white' : 'bg-amber-100 text-amber-700'}`}>
+                                  배송요청 {reqCnt}
+                                </span>
+                              )}
                               <span className="ml-auto text-sm font-bold text-primary-700 flex-shrink-0">{formatPrice(totalAmt)}</span>
                               <svg className={`w-3.5 h-3.5 text-slate-400 flex-shrink-0 transition-transform ${isDateOp ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -391,12 +494,13 @@ export default function AdminShippingPage() {
                                     <th className="px-4 py-2 text-center">사이즈</th>
                                     <th className="px-4 py-2 text-center">색상</th>
                                     <th className="px-4 py-2 text-center">수량</th>
+                                    <th className="px-4 py-2 text-center">세일율</th>
                                     <th className="px-4 py-2 text-right">금액</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-50">
                                   {dateG.items.map((it) => (
-                                    <tr key={it.key} className={`transition-colors ${selected.has(it.selId) ? 'bg-primary-50/60' : 'hover:bg-slate-50'}`}>
+                                    <tr key={it.key} className={`transition-colors ${selected.has(it.selId) ? 'bg-primary-50/60' : it.deliveryRequestedAt && withinDeliveryWindow ? 'bg-amber-50' : it.deliveryRequestedAt ? 'bg-amber-50/30' : 'hover:bg-slate-50'}`}>
                                       <td className="px-4 py-2.5">
                                         <input type="checkbox" checked={selected.has(it.selId)} onChange={() => toggleItem(it.selId)} className="w-4 h-4 accent-primary-600" />
                                       </td>
@@ -404,6 +508,11 @@ export default function AdminShippingPage() {
                                         {it.source === 'order'
                                           ? <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">주문</span>
                                           : <span className="text-xs font-semibold text-blue-600   bg-blue-50   px-1.5 py-0.5 rounded-full">공급업체</span>}
+                                        {it.deliveryRequestedAt && (
+                                          <span className={`block mt-0.5 text-[10px] px-1 py-0.5 rounded font-semibold leading-tight ${withinDeliveryWindow ? 'bg-amber-500 text-white' : 'bg-amber-100 text-amber-700'}`}>
+                                            배송요청
+                                          </span>
+                                        )}
                                       </td>
                                       <td className="px-4 py-2.5 text-xs font-semibold text-primary-600">{it.brand}</td>
                                       <td className="px-4 py-2.5">
@@ -411,10 +520,18 @@ export default function AdminShippingPage() {
                                           <Image src={it.image || 'https://placehold.co/36x36'} alt={it.name} fill className="object-cover" />
                                         </div>
                                       </td>
-                                      <td className="px-4 py-2.5 font-medium text-slate-800 max-w-[140px] truncate">{it.name}</td>
+                                      <td className="px-4 py-2.5 font-medium text-slate-800 max-w-[140px]">
+                                        <span className="block truncate">{it.name}</span>
+                                        {it.productNumber && <span className="block text-xs text-slate-400 font-mono">{it.productNumber}</span>}
+                                      </td>
                                       <td className="px-4 py-2.5 text-center text-xs text-slate-500">{it.size}</td>
                                       <td className="px-4 py-2.5 text-center text-xs text-slate-500">{it.color}</td>
                                       <td className="px-4 py-2.5 text-center font-semibold">{it.quantity}</td>
+                                      <td className="px-4 py-2.5 text-center">
+                                        {it.isOnSale
+                                          ? <span className="text-xs font-bold text-red-500 whitespace-nowrap">{it.saleType === 'RATE' ? `${it.saleValue}%` : it.saleValue ? `${it.saleValue.toLocaleString()}원` : ''}</span>
+                                          : <span className="text-slate-300 text-xs">-</span>}
+                                      </td>
                                       <td className="px-4 py-2.5 text-right font-semibold text-primary-700">
                                         {it.price !== null ? formatPrice(it.price * it.quantity) : <span className="text-slate-300 text-xs">-</span>}
                                       </td>
@@ -432,7 +549,8 @@ export default function AdminShippingPage() {
               );
             })}
           </div>
-        )
+        )}
+        </>
       )}
 
       {/* ══════════ 배송완료 ══════════ */}
@@ -517,6 +635,7 @@ export default function AdminShippingPage() {
                                       <th className="px-4 py-2 text-center">사이즈</th>
                                       <th className="px-4 py-2 text-center">색상</th>
                                       <th className="px-4 py-2 text-center">수량</th>
+                                      <th className="px-4 py-2 text-center">세일율</th>
                                       <th className="px-4 py-2 text-right">금액</th>
                                     </tr>
                                   </thead>
@@ -530,10 +649,18 @@ export default function AdminShippingPage() {
                                               <Image src={it.product.images[0] || 'https://placehold.co/36x36'} alt={it.product.name} fill className="object-cover" />
                                             </div>
                                           </td>
-                                          <td className="px-4 py-2.5 font-medium text-slate-800 max-w-[140px] truncate">{it.product.name}</td>
+                                          <td className="px-4 py-2.5 font-medium text-slate-800 max-w-[140px]">
+                                            <span className="block truncate">{it.product.name}</span>
+                                            {it.product.productNumber && <span className="block text-xs text-slate-400 font-mono">{it.product.productNumber}</span>}
+                                          </td>
                                           <td className="px-4 py-2.5 text-center text-xs text-slate-500">{it.size || '-'}</td>
                                           <td className="px-4 py-2.5 text-center text-xs text-slate-500">{it.color || '-'}</td>
                                           <td className="px-4 py-2.5 text-center font-semibold">{it.quantity}</td>
+                                          <td className="px-4 py-2.5 text-center">
+                                            {it.isOnSale
+                                              ? <span className="text-xs font-bold text-red-500 whitespace-nowrap">{it.saleType === 'RATE' ? `${it.saleValue}%` : it.saleValue ? `${it.saleValue.toLocaleString()}원` : ''}</span>
+                                              : <span className="text-slate-300 text-xs">-</span>}
+                                          </td>
                                           <td className="px-4 py-2.5 text-right font-semibold text-primary-700">{formatPrice(it.price * it.quantity)}</td>
                                         </tr>
                                       ))
@@ -608,6 +735,7 @@ export default function AdminShippingPage() {
                                     <th className="px-4 py-2 text-center">사이즈</th>
                                     <th className="px-4 py-2 text-center">색상</th>
                                     <th className="px-4 py-2 text-center">수량</th>
+                                    <th className="px-4 py-2 text-center">세일율</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-50">
@@ -619,10 +747,18 @@ export default function AdminShippingPage() {
                                           <Image src={it.image || 'https://placehold.co/36x36'} alt={it.name} fill className="object-cover" />
                                         </div>
                                       </td>
-                                      <td className="px-4 py-2.5 font-medium text-slate-800 max-w-[140px] truncate">{it.name}</td>
+                                      <td className="px-4 py-2.5 font-medium text-slate-800 max-w-[140px]">
+                                        <span className="block truncate">{it.name}</span>
+                                        {it.productNumber && <span className="block text-xs text-slate-400 font-mono">{it.productNumber}</span>}
+                                      </td>
                                       <td className="px-4 py-2.5 text-center text-xs text-slate-500">{it.size}</td>
                                       <td className="px-4 py-2.5 text-center text-xs text-slate-500">{it.color}</td>
                                       <td className="px-4 py-2.5 text-center font-semibold">{it.quantity}</td>
+                                      <td className="px-4 py-2.5 text-center">
+                                        {it.isOnSale
+                                          ? <span className="text-xs font-bold text-red-500 whitespace-nowrap">{it.saleType === 'RATE' ? `${it.saleValue}%` : it.saleValue ? `${it.saleValue.toLocaleString()}원` : ''}</span>
+                                          : <span className="text-slate-300 text-xs">-</span>}
+                                      </td>
                                     </tr>
                                   ))}
                                 </tbody>

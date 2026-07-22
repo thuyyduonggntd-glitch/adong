@@ -5,22 +5,18 @@ import { formatDate } from '@/lib/utils';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-
-const STATUS_MAP: Record<string, { label: string; color: string }> = {
-  PENDING:  { label: '답변대기', color: 'bg-yellow-100 text-yellow-700' },
-  ANSWERED: { label: '답변완료', color: 'bg-green-100 text-green-700' },
-  CLOSED:   { label: '종료',     color: 'bg-slate-100 text-slate-500' },
-};
-
-const BRANDS = [
-  'Aimée','Bambi','Cloud Baby','Dreamy','Elfin',
-  'Fluffie','Gentle','Happy Bear','Ivory','Jelly Pop',
-  'Kinder','Little Star','Mellow',
-];
+import { useTranslation } from 'react-i18next';
 
 type QnA = { id: string; title: string; content: string; status: string; createdAt: string; answeredAt: string | null; answer: string | null; user: { name: string }; images: string[] };
 
 export default function QnAPage() {
+  const { t } = useTranslation();
+  const STATUS_MAP: Record<string, { label: string; color: string }> = {
+    PENDING:  { label: t('qna.status.PENDING'),  color: 'bg-yellow-100 text-yellow-700' },
+    ANSWERED: { label: t('qna.status.ANSWERED'), color: 'bg-green-100 text-green-700' },
+    CLOSED:   { label: t('qna.status.CLOSED'),   color: 'bg-slate-100 text-slate-500' },
+  };
+
   const { data: session } = useSession();
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -31,8 +27,6 @@ export default function QnAPage() {
   const [previewFiles, setPreviewFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  const [searchQ, setSearchQ]   = useState('');
-  const [brandFilter, setBrandFilter] = useState('');
 
   useEffect(() => {
     if (session) {
@@ -40,6 +34,11 @@ export default function QnAPage() {
         if (r.ok) { const d = await r.json(); setList(Array.isArray(d) ? d : []); }
         setLoading(false);
       });
+      fetch('/api/qna', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'markAnswersSeen' }),
+      }).catch(() => {});
     } else {
       setLoading(false);
     }
@@ -92,73 +91,38 @@ export default function QnAPage() {
     setSubmitting(false);
   };
 
-  const filteredList = list.filter((item) => {
-    const matchQ     = !searchQ     || item.title.toLowerCase().includes(searchQ.toLowerCase());
-    const matchBrand = !brandFilter || item.title.toLowerCase().includes(brandFilter.toLowerCase());
-    return matchQ && matchBrand;
-  });
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-slate-800">질의응답</h1>
+        <h1 className="text-2xl font-bold text-slate-800">{t('nav.qna')}</h1>
         {session && (
           <button onClick={() => setShowForm(!showForm)} className="btn-primary text-sm">
-            {showForm ? '취소' : '+ 문의 작성'}
+            {showForm ? t('qna.cancel') : t('qna.writeNew')}
           </button>
         )}
         {!session && (
-          <Link href="/login" className="btn-primary text-sm">로그인 후 작성</Link>
+          <Link href="/login" className="btn-primary text-sm">{t('qna.loginToWrite')}</Link>
         )}
       </div>
 
-      {/* 검색 + 브랜드 필터 */}
-      {session && (
-        <div className="mb-5 space-y-3">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="제목으로 검색..."
-              value={searchQ}
-              onChange={(e) => setSearchQ(e.target.value)}
-              className="input flex-1 text-sm"
-            />
-            {searchQ && <button onClick={() => setSearchQ('')} className="text-xs text-slate-400 hover:text-slate-600 px-2">초기화</button>}
-          </div>
-          <div>
-            <p className="text-xs text-slate-400 mb-1.5">브랜드 빠른 검색</p>
-            <div className="flex flex-wrap gap-1.5">
-              <button onClick={() => setBrandFilter('')}
-                className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${!brandFilter ? 'bg-primary-600 text-white border-primary-600' : 'border-slate-200 text-slate-600 hover:border-primary-400'}`}>
-                전체
-              </button>
-              {BRANDS.map((b) => (
-                <button key={b} onClick={() => setBrandFilter(brandFilter === b ? '' : b)}
-                  className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${brandFilter === b ? 'bg-primary-600 text-white border-primary-600' : 'border-slate-200 text-slate-600 hover:border-primary-400'}`}>
-                  {b[0].toUpperCase()} · {b}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 작성 폼 */}
       {showForm && (
         <form onSubmit={handleSubmit} className="card p-6 mb-6 space-y-4">
-          <h2 className="font-semibold text-slate-800">문의 작성</h2>
+          <h2 className="font-semibold text-slate-800">{t('qna.writeFormTitle')}</h2>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">제목</label>
-            <input className="input" placeholder="문의 제목을 입력하세요" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
+            <label className="block text-sm font-medium text-slate-700 mb-1">{t('qna.subjectLabel')}</label>
+            <input className="input" placeholder={t('qna.subjectPlaceholder')} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">내용</label>
-            <textarea className="input min-h-32 resize-none" placeholder="문의 내용을 자세히 작성해주세요&#10;(상품 현황 체크, 재고 문의, 발주 요청 등)" value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} required />
+            <label className="block text-sm font-medium text-slate-700 mb-1">{t('qna.contentLabel')}</label>
+            <textarea className="input min-h-32 resize-none" placeholder={t('qna.contentPlaceholder')} value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} required />
           </div>
 
           {/* 사진 업로드 */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">사진 첨부 (선택)</label>
+            <label className="block text-sm font-medium text-slate-700 mb-2">{t('qna.photoLabel')}</label>
             <div
               className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center cursor-pointer hover:border-primary-400 transition-colors"
               onClick={() => fileRef.current?.click()}
@@ -169,8 +133,8 @@ export default function QnAPage() {
               <svg className="w-8 h-8 text-slate-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
-              <p className="text-sm text-slate-400">클릭하거나 드래그하여 사진 첨부</p>
-              <p className="text-xs text-slate-300 mt-1">여러 장 선택 가능</p>
+              <p className="text-sm text-slate-400">{t('qna.photoDropHint')}</p>
+              <p className="text-xs text-slate-300 mt-1">{t('qna.photoMultiHint')}</p>
             </div>
 
             {previews.length > 0 && (
@@ -186,32 +150,27 @@ export default function QnAPage() {
           </div>
 
           <button type="submit" disabled={submitting} className="btn-primary">
-            {submitting ? '전송 중...' : '문의 제출'}
+            {submitting ? t('qna.submitting') : t('qna.submit')}
           </button>
         </form>
       )}
 
       {/* 목록 */}
       {loading ? (
-        <div className="text-center py-16 text-slate-400">로딩 중...</div>
+        <div className="text-center py-16 text-slate-400">{t('qna.loading')}</div>
       ) : !session ? (
         <div className="text-center py-16 text-slate-400">
           <div className="text-5xl mb-3">💬</div>
-          <p>로그인 후 질의응답을 이용할 수 있습니다.</p>
+          <p>{t('qna.loginRequired')}</p>
         </div>
       ) : list.length === 0 ? (
         <div className="text-center py-16 text-slate-400">
           <div className="text-5xl mb-3">💬</div>
-          <p>작성된 문의가 없습니다.</p>
+          <p>{t('qna.empty')}</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {filteredList.length === 0 && (
-            <div className="text-center py-10 text-slate-400 text-sm card">
-              {searchQ || brandFilter ? '검색 결과가 없습니다.' : '작성된 문의가 없습니다.'}
-            </div>
-          )}
-          {filteredList.map((item) => {
+          {list.map((item) => {
             const st = STATUS_MAP[item.status];
             return (
               <div key={item.id} className="card overflow-hidden">
@@ -254,7 +213,7 @@ export default function QnAPage() {
                 )}
                 {!item.answer && (
                   <div className="px-5 py-3 bg-slate-50 border-t border-slate-100">
-                    <p className="text-xs text-slate-400">답변을 준비 중입니다.</p>
+                    <p className="text-xs text-slate-400">{t('qna.answerPending')}</p>
                   </div>
                 )}
               </div>

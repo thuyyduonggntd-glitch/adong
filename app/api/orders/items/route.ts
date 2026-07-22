@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { hasAdminAccess } from '@/lib/adminAccess';
+import { isWithinTimeWindow } from '@/lib/utils';
 
 function isWithinCancelWindow(cancelFrom: string | null, cancelTo: string | null): boolean {
   if (!cancelFrom || !cancelTo) return true;
@@ -21,11 +23,28 @@ async function syncUserBalance(userId: string) {
   await prisma.user.update({ where: { id: userId }, data: { depositAmount: (dep._sum.amount ?? 0) - (wd._sum.amount ?? 0) } });
 }
 
+/** 품절 처리로 0으로 강제됐던 색상+사이즈 재고를, 품절 상태를 벗어나는 항목에 한해 스냅샷 값으로 복구 */
+async function restoreStockSnapshots(itemIds: string[]) {
+  const items = await prisma.orderItem.findMany({
+    where: { id: { in: itemIds }, outOfStockAt: { not: null }, stockSnapshot: { not: null } },
+    select: { id: true, productId: true, color: true, size: true, stockSnapshot: true },
+  });
+  for (const item of items) {
+    await prisma.productVariant.updateMany({
+      where: { productId: item.productId, color: item.color, size: item.size },
+      data: { stock: item.stockSnapshot! },
+    });
+  }
+  if (items.length > 0) {
+    await prisma.orderItem.updateMany({ where: { id: { in: items.map((i) => i.id) } }, data: { stockSnapshot: null } });
+  }
+}
+
 export async function PATCH(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const isAdmin = (session.user as any)?.role === 'ADMIN';
+  const isAdmin = hasAdminAccess((session.user as any)?.role);
   const userId  = (session.user as any)?.id;
   const body    = await req.json();
   const { itemIds, action, cancelLocked, arrivedAt, remark } = body;
@@ -39,10 +58,43 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: true, count: itemIds.length });
   }
 
-  /* ── 품절 처리 (admin) — 다른 상태 먼저 초기화 ── */
+  /* ── 주문확인 처리 (admin) ── */
+  if (action === 'confirm') {
+    if (!isAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const now = new Date();
+    await prisma.orderItem.updateMany({
+      where: { id: { in: itemIds } },
+      data: { confirmedAt: now },
+    });
+    const confirmedItems = await prisma.orderItem.findMany({ where: { id: { in: itemIds } }, select: { orderId: true } });
+    const confirmedOrderIds = Array.from(new Set(confirmedItems.map((i) => i.orderId)));
+    for (const orderId of confirmedOrderIds) {
+      await prisma.order.update({ where: { id: orderId }, data: { status: 'CONFIRMED' } });
+    }
+    return NextResponse.json({ ok: true, count: itemIds.length });
+  }
+
+  /* ── 품절 처리 (admin) — 다른 상태 먼저 초기화 + 해당 색상·사이즈 재고를 0으로 차단 ── */
   if (action === 'outOfStock') {
     if (!isAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const now = new Date();
+
+    // 아직 품절 처리되지 않은 항목만: 현재 재고를 스냅샷으로 저장하고 0으로 차단 (중복 처리 방지)
+    const freshTargets = await prisma.orderItem.findMany({
+      where: { id: { in: itemIds }, outOfStockAt: null },
+      select: { id: true, productId: true, color: true, size: true },
+    });
+    for (const item of freshTargets) {
+      const variant = await prisma.productVariant.findUnique({
+        where: { productId_color_size: { productId: item.productId, color: item.color, size: item.size } },
+      });
+      await prisma.orderItem.update({ where: { id: item.id }, data: { stockSnapshot: variant?.stock ?? 0 } });
+      await prisma.productVariant.updateMany({
+        where: { productId: item.productId, color: item.color, size: item.size },
+        data: { stock: 0 },
+      });
+    }
+
     await prisma.orderItem.updateMany({
       where: { id: { in: itemIds } },
       data: { outOfStockAt: now, arrivedAt: null, cancelledAt: null, unshippedAt: null, remark: remark ?? null },
@@ -58,9 +110,10 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: true, count: itemIds.length });
   }
 
-  /* ── 미송 처리 (admin) — 다른 상태 먼저 초기화 ── */
+  /* ── 미송 처리 (admin) — 재고는 건드리지 않음. 품절→미송 전환 시 차단했던 재고만 복구 ── */
   if (action === 'unshipped') {
     if (!isAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    await restoreStockSnapshots(itemIds);
     const now = new Date();
     await prisma.orderItem.updateMany({
       where: { id: { in: itemIds } },
@@ -90,6 +143,9 @@ export async function PATCH(req: NextRequest) {
   if (action === 'revertToConfirmed') {
     if (!isAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+    // 품절 처리로 차단됐던 재고 복구
+    await restoreStockSnapshots(itemIds);
+
     // 기존에 arrivedAt이 있던 항목 → 출금 취소(입금) 처리
     const arrivedItems = await prisma.orderItem.findMany({
       where: { id: { in: itemIds }, arrivedAt: { not: null } },
@@ -118,10 +174,10 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    // 모든 상태 플래그 초기화
+    // 모든 상태 플래그 초기화 + 주문확인 상태로 복구
     await prisma.orderItem.updateMany({
       where: { id: { in: itemIds } },
-      data: { arrivedAt: null, cancelledAt: null, outOfStockAt: null, unshippedAt: null },
+      data: { arrivedAt: null, cancelledAt: null, outOfStockAt: null, unshippedAt: null, confirmedAt: new Date() },
     });
 
     // 관련 주문 상태 CONFIRMED 복구
@@ -136,6 +192,9 @@ export async function PATCH(req: NextRequest) {
   /* ── 관리자 강제 취소 (admin) ── */
   if (action === 'adminCancel') {
     if (!isAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    // 품절 처리로 차단됐던 재고 복구
+    await restoreStockSnapshots(itemIds);
 
     // 기존에 arrivedAt이 있던 항목 → 출금 취소(입금) 처리
     const arrivedItems = await prisma.orderItem.findMany({
@@ -168,7 +227,7 @@ export async function PATCH(req: NextRequest) {
     const now = new Date();
     await prisma.orderItem.updateMany({
       where: { id: { in: itemIds } },
-      data: { cancelledAt: now, arrivedAt: null, outOfStockAt: null, unshippedAt: null },
+      data: { cancelledAt: now, cancelledByAdmin: true, arrivedAt: null, outOfStockAt: null, unshippedAt: null },
     });
 
     // 주문 전체 취소 여부 확인
@@ -178,6 +237,42 @@ export async function PATCH(req: NextRequest) {
       const remaining = await prisma.orderItem.findMany({ where: { orderId, cancelledAt: null } });
       if (remaining.length === 0) await prisma.order.update({ where: { id: orderId }, data: { status: 'CANCELLED' } });
     }
+    return NextResponse.json({ ok: true, count: itemIds.length });
+  }
+
+  /* ── 배송 요청 (user or admin) ── */
+  if (action === 'requestDelivery') {
+    if (!isAdmin) {
+      const deliveryPolicy = await prisma.deliveryPolicy.findFirst();
+      if (deliveryPolicy?.enabled && !isWithinTimeWindow(deliveryPolicy.fromTime, deliveryPolicy.toTime))
+        return NextResponse.json({ error: `배송 요청 가능 시간은 ${deliveryPolicy.fromTime} ~ ${deliveryPolicy.toTime} (서울 기준)입니다.` }, { status: 403 });
+
+      const ownItems = await prisma.orderItem.findMany({
+        where: { id: { in: itemIds } },
+        include: { order: { select: { userId: true } } },
+      });
+      for (const item of ownItems) {
+        if (item.order.userId !== userId)
+          return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+      }
+    }
+    await prisma.orderItem.updateMany({ where: { id: { in: itemIds } }, data: { deliveryRequestedAt: new Date() } });
+    return NextResponse.json({ ok: true, count: itemIds.length });
+  }
+
+  /* ── 배송 요청 취소 (user or admin) ── */
+  if (action === 'cancelDeliveryRequest') {
+    if (!isAdmin) {
+      const ownItems = await prisma.orderItem.findMany({
+        where: { id: { in: itemIds } },
+        include: { order: { select: { userId: true } } },
+      });
+      for (const item of ownItems) {
+        if (item.order.userId !== userId)
+          return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+      }
+    }
+    await prisma.orderItem.updateMany({ where: { id: { in: itemIds } }, data: { deliveryRequestedAt: null } });
     return NextResponse.json({ ok: true, count: itemIds.length });
   }
 
@@ -209,7 +304,7 @@ export async function PATCH(req: NextRequest) {
         return NextResponse.json({ error: '취소할 수 없는 상태의 주문입니다.' }, { status: 400 });
     }
     const now = new Date();
-    await prisma.orderItem.updateMany({ where: { id: { in: itemIds } }, data: { cancelledAt: now } });
+    await prisma.orderItem.updateMany({ where: { id: { in: itemIds } }, data: { cancelledAt: now, cancelledByAdmin: false } });
     const affectedOrderIds = Array.from(new Set(items.map((i) => i.orderId)));
     for (const orderId of affectedOrderIds) {
       const remaining = await prisma.orderItem.findMany({ where: { orderId, cancelledAt: null } });
@@ -220,6 +315,10 @@ export async function PATCH(req: NextRequest) {
 
   /* ── 입고 처리 (admin) — 다른 상태 초기화 후 arrivedAt 기록 + 자동 출금 ── */
   if (!isAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  // 품절 처리로 차단됐던 재고 복구 (이후 정상 입고 차감 로직이 이어서 적용됨)
+  await restoreStockSnapshots(itemIds);
+
   const date = arrivedAt ? new Date(arrivedAt) : new Date();
 
   // 기존에 arrivedAt이 없던 항목만 출금 처리 (중복 출금 방지)
@@ -276,10 +375,23 @@ export async function GET(req: NextRequest) {
   const allArrived    = searchParams.get('allArrived');
   const date          = searchParams.get('date');
   const cancelled     = searchParams.get('cancelled');
+  const cancelledToday = searchParams.get('cancelledToday');
   const outOfStockOrUnshipped = searchParams.get('outOfStockOrUnshipped');
 
-  const isAdmin = (session.user as any)?.role === 'ADMIN';
+  const isAdmin = hasAdminAccess((session.user as any)?.role);
   const userId  = (session.user as any)?.id;
+
+  // 오늘(KST 자정) 취소 카운트
+  if (cancelledToday === '1') {
+    if (!isAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const nowKst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    nowKst.setUTCHours(0, 0, 0, 0);
+    const kstMidnightUtc = new Date(nowKst.getTime() - 9 * 60 * 60 * 1000);
+    const count = await prisma.orderItem.count({
+      where: { cancelledAt: { gte: kstMidnightUtc } },
+    });
+    return NextResponse.json({ count });
+  }
 
   // 3개월 기준일
   const cutoff90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
@@ -324,7 +436,7 @@ export async function GET(req: NextRequest) {
     const items = await prisma.orderItem.findMany({
       where,
       include: {
-        product: { select: { id: true, name: true, images: true, brand: true, colors: true, isOnSale: true, saleType: true, saleValue: true } },
+        product: { select: { id: true, name: true, images: true, brand: true, colors: true, productNumber: true, isOnSale: true, saleType: true, saleValue: true } },
         order:   { select: { id: true, status: true, userId: true, createdAt: true, note: true, user: { select: { name: true, email: true } } } },
       },
       orderBy: { cancelledAt: 'desc' },
@@ -351,7 +463,7 @@ export async function GET(req: NextRequest) {
   const items = await prisma.orderItem.findMany({
     where,
     include: {
-      product: { select: { id: true, name: true, images: true, brand: true, colors: true, isOnSale: true, saleType: true, saleValue: true } },
+      product: { select: { id: true, name: true, images: true, brand: true, colors: true, productNumber: true, isOnSale: true, saleType: true, saleValue: true } },
       order:   { select: { id: true, status: true, userId: true, createdAt: true, note: true, user: { select: { name: true, email: true } } } },
     },
     orderBy: { arrivedAt: 'desc' },

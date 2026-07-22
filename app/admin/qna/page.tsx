@@ -48,7 +48,7 @@ export default function AdminQnAPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-800 mb-6">질의응답 관리</h1>
+      <h1 className="text-2xl font-bold text-slate-800 mb-6">문의 관리</h1>
 
       <div className="flex gap-2 mb-6">
         {['ALL', 'PENDING', 'ANSWERED', 'CLOSED'].map((s) => (
@@ -63,7 +63,7 @@ export default function AdminQnAPage() {
       {loading ? (
         <div className="text-center py-16 text-slate-400">로딩 중...</div>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-16 text-slate-400">질의응답이 없습니다.</div>
+        <div className="text-center py-16 text-slate-400">문의가 없습니다.</div>
       ) : (
         <div className="space-y-3">
           {filtered.map((item) => {

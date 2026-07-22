@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { hasAdminAccess } from '@/lib/adminAccess';
 import { calcFinalPrice } from '@/lib/utils';
+import { upsertBrandNotice } from '@/lib/notify';
+import { translateAndSaveProduct } from '@/lib/translate';
+import { buildProductSearchWhere } from '@/lib/productSearch';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -15,23 +19,20 @@ export async function GET(req: NextRequest) {
   const isNew     = searchParams.get('isNew');
   const isOnSale  = searchParams.get('isOnSale');
 
-  const where: any = {
-    ...(admin !== '1' ? { isActive: true } : {}),
-    ...(category ? { category: { slug: category } } : {}),
-    ...(q        ? { OR: [
-      { name:        { contains: q, mode: 'insensitive' } },
-      { brand:       { contains: q, mode: 'insensitive' } },
-      { productType: { contains: q, mode: 'insensitive' } },
-    ]} : {}),
-    ...(brand    ? { brand: { contains: brand, mode: 'insensitive' } } : {}),
-    ...(season   ? { season: { contains: season, mode: 'insensitive' } } : {}),
-    ...(isOnSale === '1' ? { isOnSale: true } : {}),
-    ...(isNew === '1'    ? { createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } } : {}),
-  };
+  const conditions: any[] = [];
+  if (admin !== '1') conditions.push({ isActive: true });
+  if (category) conditions.push({ OR: [{ category: { slug: category } }, { sizeCategory: { slug: category } }] });
+  if (q)        conditions.push(buildProductSearchWhere(q));
+  if (brand)    conditions.push({ brand: { contains: brand, mode: 'insensitive' } });
+  if (season)   conditions.push({ season: { contains: season, mode: 'insensitive' } });
+  if (isOnSale === '1') conditions.push({ isOnSale: true });
+  if (isNew === '1')    conditions.push({ createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } });
+
+  const where: any = conditions.length > 0 ? { AND: conditions } : {};
 
   const products = await prisma.product.findMany({
     where,
-    include: { category: true, prices: true },
+    include: { category: true, sizeCategory: true, prices: true },
     orderBy: sort === 'price_asc' ? { price: 'asc' } : sort === 'price_desc' ? { price: 'desc' } : { createdAt: 'desc' },
   });
 
@@ -53,7 +54,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || (session.user as any)?.role !== 'ADMIN')
+  if (!session || !hasAdminAccess((session.user as any)?.role))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const d = await req.json();
@@ -74,11 +75,13 @@ export async function POST(req: NextRequest) {
       gender:        d.gender       || null,
       productType:   d.productType  || null,
       season:        d.season       || null,
-      sizeImages:    d.sizeImages   || [],
-      isOnSale:      Boolean(d.isOnSale),
+      sizeImages:      d.sizeImages      || [],
+      sizeExtraPrices: d.sizeExtraPrices || null,
+      isOnSale:        Boolean(d.isOnSale),
       saleType:      d.saleType     || null,
       saleValue:     d.saleValue    ? Number(d.saleValue) : null,
-      categoryId:    d.categoryId,
+      categoryId:    d.categoryId || null,
+      sizeCategoryId: d.sizeCategoryId || null,
       sizes:         d.sizes        || [],
       colors:        d.colors       || [],
       stock:         Number(d.stock || 0),
@@ -92,5 +95,13 @@ export async function POST(req: NextRequest) {
     },
     include: { prices: true, variants: true },
   });
+
+  const displayName = product.brand?.trim() || product.name;
+  if (product.isOnSale)    await upsertBrandNotice(displayName, 'SALE');
+  if (product.isCarryOver) await upsertBrandNotice(displayName, 'CARRYOVER');
+
+  // 자동 번역 — 저장 응답을 지연시키지 않도록 백그라운드로 실행
+  translateAndSaveProduct(product.id).catch((err) => console.error('[translate] create hook failed:', err));
+
   return NextResponse.json(product);
 }

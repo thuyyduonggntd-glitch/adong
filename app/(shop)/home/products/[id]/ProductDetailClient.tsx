@@ -1,11 +1,13 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { formatPrice, getSaleLabel, calcFinalPrice } from '@/lib/utils';
 import { useCartStore } from '@/store/cart';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { useTranslation } from 'react-i18next';
+import { localizeCategoryName } from '@/lib/productLocale';
 
 type BrandInfo = {
   notice: string | null;
@@ -15,26 +17,42 @@ type BrandInfo = {
 
 interface Props {
   product: any;
-  gradeLabel: string;
   brandInfo?: BrandInfo;
+  hasBackorder?: boolean;
 }
 
-export default function ProductDetailClient({ product, gradeLabel, brandInfo }: Props) {
+export default function ProductDetailClient({ product, brandInfo, hasBackorder }: Props) {
+  const { t, i18n } = useTranslation();
+  const lang = i18n.language;
+  // 표시용 번역 필드 — 색상/시즌 등 필터·재고매칭에 쓰이는 원본 값(product.colors, product.season)은 그대로 두고
+  // 화면에 보여줄 텍스트만 번역본으로 교체한다.
+  const localizedName        = product[`name_${lang}`] || product.name;
+  const localizedDescription = product[`description_${lang}`] || product.description;
+  const localizedMaterial    = product[`material_${lang}`] || product.material;
+  const localizedGender      = product[`gender_${lang}`] || product.gender;
+  const localizedSeason      = product[`season_${lang}`] || product.season;
+  const localizedColors: string[] = (product[`colors_${lang}`]?.length ? product[`colors_${lang}`] : product.colors) ?? [];
+  const localizedCategoryName = localizeCategoryName(product.category, lang);
   const { data: session } = useSession();
   const router = useRouter();
   const addItem = useCartStore((s) => s.addItem);
 
-  const [selectedSize, setSelectedSize]   = useState('');
-  const [selectedColor, setSelectedColor] = useState('');
-  const [quantity, setQuantity]           = useState(1);
-  const [wishlisted, setWishlisted]       = useState(false);
-  const [added, setAdded]                 = useState(false);
-  const [sizeImgIdx, setSizeImgIdx]       = useState(0);
-  const [mainImgIdx, setMainImgIdx]       = useState(0);
+  const [selectedSize, setSelectedSize]     = useState('');
+  const [selectedColor, setSelectedColor]   = useState('');
+  const [quantity, setQuantity]             = useState(1);
+  const [wishlisted, setWishlisted]         = useState(false);
+  const [brandFaved, setBrandFaved]         = useState(false);
+  const [togglingBrand, setTogglingBrand]   = useState(false);
+  const [added, setAdded]                   = useState(false);
+  const [sizeImgIdx, setSizeImgIdx]         = useState(0);
+  const [mainImgIdx, setMainImgIdx]         = useState(0);
 
-  const basePrice    = product.myGradePrice ?? product.price;
-  const displayPrice = product.myFinalPrice ?? calcFinalPrice(basePrice, product.isOnSale, product.saleType, product.saleValue);
-  const hasDiscount  = product.isOnSale && displayPrice < basePrice;
+  const basePrice       = product.myGradePrice ?? product.price;
+  const displayPrice    = product.myFinalPrice ?? calcFinalPrice(basePrice, product.isOnSale, product.saleType, product.saleValue);
+  const hasDiscount     = product.isOnSale && displayPrice < basePrice;
+  const sizeExtraPrices = (product.sizeExtraPrices as Record<string, number>) ?? {};
+  const sizeSurcharge   = sizeExtraPrices[selectedSize] ?? 0;
+  const finalPrice      = displayPrice + sizeSurcharge;
 
   const selectedVariant = product.variants?.find(
     (v: { color: string; size: string; stock: number }) => v.color === selectedColor && v.size === selectedSize
@@ -43,22 +61,31 @@ export default function ProductDetailClient({ product, gradeLabel, brandInfo }: 
   const isOutOfStock  = variantStock !== null && variantStock <= 0;
 
   const handleAddCart = () => {
-    if (!selectedSize || !selectedColor) { alert('사이즈와 색상을 선택해주세요.'); return; }
-    if (isOutOfStock) { alert('품절된 상품입니다.'); return; }
-    const effectivePrice = product.myFinalPrice ?? product.myGradePrice ?? product.price;
+    if (!session) { router.push('/login'); return; }
+    if (!selectedSize || !selectedColor) { alert(t('product.selectSizeColorAlert')); return; }
+    if (isOutOfStock) { alert(t('product.outOfStockAlert')); return; }
+    const effectivePrice = finalPrice;
     const colorIdx = product.colors.indexOf(selectedColor);
     const colorImage = (colorIdx >= 0 && product.images[colorIdx]) ? product.images[colorIdx] : product.images[0];
-    addItem({ id: product.id, name: product.name, price: effectivePrice, image: colorImage }, quantity, selectedSize, selectedColor);
+    addItem({ id: product.id, name: localizedName, price: effectivePrice, image: colorImage }, quantity, selectedSize, selectedColor);
     setAdded(true);
     setTimeout(() => setAdded(false), 2000);
   };
 
   const handleOrder = () => {
     if (!session) { router.push('/login'); return; }
-    if (!selectedSize || !selectedColor) { alert('사이즈와 색상을 선택해주세요.'); return; }
+    if (!selectedSize || !selectedColor) { alert(t('product.selectSizeColorAlert')); return; }
     handleAddCart();
     router.push('/home/cart');
   };
+
+  useEffect(() => {
+    if (!session || !product.brand) return;
+    fetch('/api/brands/favorite').then((r) => r.json()).then((favs) => {
+      if (Array.isArray(favs)) setBrandFaved(favs.some((f: { brandName: string }) => f.brandName === product.brand));
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
 
   const handleWishlist = async () => {
     if (!session) { router.push('/login'); return; }
@@ -67,16 +94,34 @@ export default function ProductDetailClient({ product, gradeLabel, brandInfo }: 
     setWishlisted(!wishlisted);
   };
 
+  const handleBrandFav = async () => {
+    if (!session) { router.push('/login'); return; }
+    if (!product.brand || togglingBrand) return;
+    setTogglingBrand(true);
+    await fetch('/api/brands/favorite', {
+      method: brandFaved ? 'DELETE' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ brandName: product.brand }),
+    });
+    setBrandFaved(!brandFaved);
+    setTogglingBrand(false);
+  };
+
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
       <div className="grid md:grid-cols-2 gap-10">
         {/* 이미지 */}
         <div className="space-y-3">
           <div className="relative aspect-square bg-primary-50 rounded-2xl overflow-hidden">
-            <Image src={product.images[mainImgIdx] || 'https://placehold.co/600x600/EFF6FF/2563EB?text=상품'} alt={product.name} fill className="object-cover" />
-            {product.isOnSale && (
+            <Image src={product.images[mainImgIdx] || 'https://placehold.co/600x600/EFF6FF/2563EB?text=상품'} alt={localizedName} fill className="object-cover" />
+            {session && product.isOnSale && (
               <span className="absolute top-3 left-3 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-md">
-                {getSaleLabel(product.saleType, product.saleValue)}
+                {getSaleLabel(product.saleType, product.saleValue, t('common.discount'))}
+              </span>
+            )}
+            {hasBackorder && (
+              <span className="absolute top-3 right-3 bg-purple-600 text-white text-xs font-bold px-2 py-1 rounded-md">
+                {t('product.backorderBadge')}
               </span>
             )}
           </div>
@@ -97,18 +142,27 @@ export default function ProductDetailClient({ product, gradeLabel, brandInfo }: 
           <div className="flex items-center gap-2 flex-wrap mb-2">
             <Link href={`/home/products?category=${product.category?.slug}`}
               className="badge bg-primary-100 text-primary-700 text-xs hover:bg-primary-200 transition-colors cursor-pointer">
-              {product.category?.name}
+              {localizedCategoryName}
             </Link>
             {product.brand && (
-              <Link href={`/home/products?brand=${encodeURIComponent(product.brand)}`}
-                className="badge bg-slate-100 text-slate-600 text-xs font-semibold hover:bg-slate-200 transition-colors cursor-pointer">
-                {product.brand}
-              </Link>
+              <span className="inline-flex items-center gap-1">
+                <Link href={`/home/products?brand=${encodeURIComponent(product.brand)}`}
+                  className="badge bg-slate-100 text-slate-600 text-xs font-semibold hover:bg-slate-200 transition-colors cursor-pointer">
+                  {product.brand}
+                </Link>
+                <button onClick={handleBrandFav} disabled={togglingBrand}
+                  title={brandFaved ? t('product.removeFavoriteBrand') : t('product.addFavoriteBrand')}
+                  className={`p-0.5 rounded transition-colors disabled:opacity-40 ${brandFaved ? 'text-red-500' : 'text-slate-300 hover:text-red-400'}`}>
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill={brandFaved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                  </svg>
+                </button>
+              </span>
             )}
             {product.season && (
               <Link href={`/home/products?season=${encodeURIComponent(product.season)}`}
                 className="badge bg-amber-100 text-amber-700 text-xs hover:bg-amber-200 transition-colors cursor-pointer">
-                {product.season}
+                {localizedSeason}
               </Link>
             )}
             {product.productType && (
@@ -119,27 +173,42 @@ export default function ProductDetailClient({ product, gradeLabel, brandInfo }: 
             )}
           </div>
 
-          <h1 className="text-2xl font-bold text-slate-800 mt-1 mb-1">{product.name}</h1>
+          <h1 className="text-2xl font-bold text-slate-800 mt-1 mb-1">{localizedName}</h1>
 
           {/* 가격 (등급별) */}
           <div className="mb-4">
-            <p className="text-xs text-slate-400 mb-1">
-              내 등급 가격 ({gradeLabel})
-            </p>
-            {hasDiscount ? (
-              <div className="space-y-1">
-                <div className="flex items-baseline gap-2 flex-wrap">
-                  <span className="text-lg text-slate-400 line-through">{formatPrice(basePrice)}</span>
-                  <span className="text-slate-300 text-base">→</span>
-                  <span className="text-3xl font-bold text-red-600">{formatPrice(displayPrice)}</span>
-                </div>
-                <span className="inline-block text-sm font-bold text-red-500 bg-red-50 px-2 py-0.5 rounded">
-                  {getSaleLabel(product.saleType, product.saleValue)}
-                  {' '}(–{(basePrice - displayPrice).toLocaleString()}원)
-                </span>
-              </div>
+            {!session ? (
+              <p className="text-lg font-medium text-slate-400">{t('product.loginToView')}</p>
             ) : (
-              <p className="text-3xl font-bold text-primary-700">{formatPrice(displayPrice)}</p>
+              <>
+                {hasDiscount ? (
+                  <div className="space-y-1">
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                      <span className="text-lg text-slate-400 line-through">{formatPrice(basePrice + sizeSurcharge)}</span>
+                      <span className="text-slate-300 text-base">→</span>
+                      <span className="text-3xl font-bold text-red-600">{formatPrice(finalPrice)}</span>
+                    </div>
+                    <span className="inline-block text-sm font-bold text-red-500 bg-red-50 px-2 py-0.5 rounded">
+                      {getSaleLabel(product.saleType, product.saleValue, t('common.discount'))}
+                      {' '}{t('product.discountSaved', { amount: (basePrice - displayPrice).toLocaleString() })}
+                    </span>
+                    {sizeSurcharge > 0 && (
+                      <span className="inline-block text-xs text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded ml-1">
+                        {t('product.sizeSurcharge', { amount: sizeSurcharge.toLocaleString() })}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <p className="text-3xl font-bold text-primary-700">{formatPrice(finalPrice)}</p>
+                    {sizeSurcharge > 0 && (
+                      <span className="text-xs text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded">
+                        {t('product.sizeAddedSuffix', { amount: sizeSurcharge.toLocaleString() })}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -149,33 +218,33 @@ export default function ProductDetailClient({ product, gradeLabel, brandInfo }: 
               <tbody className="divide-y divide-slate-50">
                 {product.brand && (
                   <tr className="bg-slate-50/50">
-                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500 w-28">Maker</td>
-                    <td className="px-4 py-2.5 text-slate-700">{product.brand}{product.season ? ` (${product.season})` : ''}</td>
+                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500 w-28">{t('product.maker')}</td>
+                    <td className="px-4 py-2.5 text-slate-700">{product.brand}{product.season ? ` (${localizedSeason})` : ''}</td>
                   </tr>
                 )}
                 {product.productNumber && (
                   <tr>
-                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">제품번호</td>
+                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">{t('product.productNumber')}</td>
                     <td className="px-4 py-2.5 text-slate-700 font-mono text-xs">{product.productNumber}</td>
                   </tr>
                 )}
                 {(product.material || product.gender) && (
                   <tr className="bg-slate-50/50">
-                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">재질/성별</td>
+                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">{t('product.materialGender')}</td>
                     <td className="px-4 py-2.5 text-slate-700">
-                      {[product.material, product.gender].filter(Boolean).join(' / ')}
+                      {[localizedMaterial, localizedGender].filter(Boolean).join(' / ')}
                     </td>
                   </tr>
                 )}
                 {product.sizes?.length > 0 && (
                   <tr>
-                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">싸이즈/장수</td>
-                    <td className="px-4 py-2.5 text-slate-700">{product.sizes.join('-')}......{product.sizes.length}장</td>
+                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">{t('product.sizeCount')}</td>
+                    <td className="px-4 py-2.5 text-slate-700">{t('product.sizeCountValue', { sizes: product.sizes.join('-'), count: product.sizes.length })}</td>
                   </tr>
                 )}
                 {product.productType && (
                   <tr className="bg-slate-50/50">
-                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">종류</td>
+                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">{t('product.type')}</td>
                     <td className="px-4 py-2.5">
                       <Link href={`/home/products?productType=${encodeURIComponent(product.productType)}`}
                         className="text-violet-700 hover:underline text-sm">
@@ -184,24 +253,23 @@ export default function ProductDetailClient({ product, gradeLabel, brandInfo }: 
                     </td>
                   </tr>
                 )}
-                {hasDiscount && (
+                {session && hasDiscount && (
                   <tr>
-                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">할인</td>
+                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">{t('product.discount')}</td>
                     <td className="px-4 py-2.5 font-bold text-red-500">
-                      {getSaleLabel(product.saleType, product.saleValue)}
-                      {' '}→ {formatPrice(displayPrice)}
-                      <span className="font-normal text-red-400 ml-1">(–{(basePrice - displayPrice).toLocaleString()}원 절약)</span>
+                      {t('product.discountArrow', { label: getSaleLabel(product.saleType, product.saleValue, t('common.discount')), price: formatPrice(displayPrice) })}
+                      <span className="font-normal text-red-400 ml-1">{t('product.discountSaved', { amount: (basePrice - displayPrice).toLocaleString() })}</span>
                     </td>
                   </tr>
                 )}
                 <tr>
-                  <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">SIZE ORDER</td>
-                  <td className="px-4 py-2.5 text-slate-700">사이즈 가능.</td>
+                  <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">{t('product.sizeOrderLabel')}</td>
+                  <td className="px-4 py-2.5 text-slate-700">{t('product.sizeOrderValue')}</td>
                 </tr>
                 {product.description && (
                   <tr className="bg-slate-50/50">
-                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">공지사항</td>
-                    <td className="px-4 py-2.5 text-slate-600 text-xs leading-relaxed">{product.description}</td>
+                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">{t('product.notice')}</td>
+                    <td className="px-4 py-2.5 text-slate-600 text-xs leading-relaxed">{localizedDescription}</td>
                   </tr>
                 )}
               </tbody>
@@ -220,20 +288,28 @@ export default function ProductDetailClient({ product, gradeLabel, brandInfo }: 
 
           {/* 사이즈 선택 */}
           <div className="mb-4">
-            <p className="text-sm font-semibold text-slate-700 mb-2">사이즈 선택 <span className="text-xs text-slate-400 font-normal">아래를 선택하여 주문하여 주십시요.</span></p>
+            <p className="text-sm font-semibold text-slate-700 mb-2">{t('product.sizeSelect')} <span className="text-xs text-slate-400 font-normal">{t('product.sizeSelectHint')}</span></p>
             <div className="flex flex-wrap gap-2">
-              {product.sizes.map((s: string) => (
-                <button key={s} onClick={() => setSelectedSize(s)}
-                  className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${selectedSize === s ? 'bg-primary-600 text-white border-primary-600' : 'border-slate-300 text-slate-600 hover:border-primary-400'}`}>
-                  {s}
-                </button>
-              ))}
+              {product.sizes.map((s: string) => {
+                const extra = sizeExtraPrices[s] ?? 0;
+                return (
+                  <button key={s} onClick={() => setSelectedSize(s)}
+                    className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${selectedSize === s ? 'bg-primary-600 text-white border-primary-600' : 'border-slate-300 text-slate-600 hover:border-primary-400'}`}>
+                    {s}
+                    {session && extra > 0 && (
+                      <span className={`ml-1 text-xs ${selectedSize === s ? 'text-primary-100' : 'text-orange-500'}`}>
+                        +{extra.toLocaleString()}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           {/* 색상 선택 */}
           <div className="mb-5">
-            <p className="text-sm font-semibold text-slate-700 mb-2">색상</p>
+            <p className="text-sm font-semibold text-slate-700 mb-2">{t('product.color')}</p>
             <div className="flex flex-wrap gap-2">
               {product.colors.map((c: string, i: number) => (
                 <button key={c} onClick={() => {
@@ -241,7 +317,7 @@ export default function ProductDetailClient({ product, gradeLabel, brandInfo }: 
                   if (product.images[i]) setMainImgIdx(i);
                 }}
                   className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${selectedColor === c ? 'bg-primary-600 text-white border-primary-600' : 'border-slate-300 text-slate-600 hover:border-primary-400'}`}>
-                  {c}
+                  {localizedColors[i] || c}
                 </button>
               ))}
             </div>
@@ -253,12 +329,12 @@ export default function ProductDetailClient({ product, gradeLabel, brandInfo }: 
               {isOutOfStock ? (
                 <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5">
                   <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
-                  품절
+                  {t('product.outOfStock')}
                 </span>
               ) : variantStock !== null ? (
                 <span className="inline-flex items-center gap-1.5 text-sm text-slate-600 bg-green-50 border border-green-200 rounded-lg px-3 py-1.5">
                   <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
-                  재고: <span className="font-semibold text-slate-800">{variantStock}개</span>
+                  {t('product.stock', { count: variantStock })}
                 </span>
               ) : null}
             </div>
@@ -266,7 +342,7 @@ export default function ProductDetailClient({ product, gradeLabel, brandInfo }: 
 
           {/* 수량 */}
           <div className="flex items-center gap-3 mb-5">
-            <p className="text-sm font-semibold text-slate-700">수량</p>
+            <p className="text-sm font-semibold text-slate-700">{t('product.quantity')}</p>
             <div className="flex items-center border border-slate-300 rounded-lg overflow-hidden">
               <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="px-3 py-2 text-slate-600 hover:bg-slate-100">-</button>
               <span className="px-4 py-2 text-sm font-medium">{quantity}</span>
@@ -282,10 +358,10 @@ export default function ProductDetailClient({ product, gradeLabel, brandInfo }: 
               </svg>
             </button>
             <button onClick={handleAddCart} disabled={isOutOfStock} className={`flex-1 btn-outline ${isOutOfStock ? 'opacity-50 cursor-not-allowed' : ''}`}>
-              {isOutOfStock ? '품절' : added ? '✓ 담겼습니다!' : '장바구니 담기'}
+              {isOutOfStock ? t('product.outOfStock') : added ? t('product.added') : t('product.addToCart')}
             </button>
             <button onClick={handleOrder} disabled={isOutOfStock} className={`flex-1 btn-primary ${isOutOfStock ? 'opacity-50 cursor-not-allowed' : ''}`}>
-              {isOutOfStock ? '품절' : '주문하기'}
+              {isOutOfStock ? t('product.outOfStock') : t('product.order')}
             </button>
           </div>
         </div>
@@ -301,7 +377,7 @@ export default function ProductDetailClient({ product, gradeLabel, brandInfo }: 
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
               </svg>
               <div>
-                <p className="text-xs font-bold text-amber-700 mb-0.5">브랜드 공지사항</p>
+                <p className="text-xs font-bold text-amber-700 mb-0.5">{t('product.brandNotice')}</p>
                 <p className="text-sm text-amber-800 whitespace-pre-wrap">{brandInfo.notice}</p>
               </div>
             </div>
@@ -311,7 +387,7 @@ export default function ProductDetailClient({ product, gradeLabel, brandInfo }: 
           {(brandInfo.sizeInfo || brandInfo.sizeImages.length > 0) && (
             <div className="border border-slate-200 rounded-xl overflow-hidden">
               <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200">
-                <p className="text-xs font-bold text-slate-600">브랜드 사이즈 정보</p>
+                <p className="text-xs font-bold text-slate-600">{t('product.brandSizeInfo')}</p>
               </div>
               <div className="px-4 py-3 space-y-3">
                 {brandInfo.sizeInfo && (
@@ -321,7 +397,7 @@ export default function ProductDetailClient({ product, gradeLabel, brandInfo }: 
                   <div className="flex flex-wrap gap-2">
                     {brandInfo.sizeImages.map((u, i) => (
                       <div key={i} className="relative rounded-lg overflow-hidden border border-slate-100">
-                        <Image src={u} alt={`사이즈 ${i + 1}`} width={200} height={200} className="object-contain max-h-48 w-auto" />
+                        <Image src={u} alt={`size ${i + 1}`} width={200} height={200} className="object-contain max-h-48 w-auto" />
                       </div>
                     ))}
                   </div>
@@ -334,7 +410,7 @@ export default function ProductDetailClient({ product, gradeLabel, brandInfo }: 
           {(brandInfo.modelInfo || brandInfo.modelImages.length > 0) && (
             <div className="border border-slate-200 rounded-xl overflow-hidden">
               <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200">
-                <p className="text-xs font-bold text-slate-600">브랜드 모델 정보</p>
+                <p className="text-xs font-bold text-slate-600">{t('product.brandModelInfo')}</p>
               </div>
               <div className="px-4 py-3 space-y-3">
                 {brandInfo.modelInfo && (
@@ -344,7 +420,7 @@ export default function ProductDetailClient({ product, gradeLabel, brandInfo }: 
                   <div className="flex flex-wrap gap-2">
                     {brandInfo.modelImages.map((u, i) => (
                       <div key={i} className="relative rounded-lg overflow-hidden border border-slate-100">
-                        <Image src={u} alt={`모델 ${i + 1}`} width={200} height={200} className="object-contain max-h-48 w-auto" />
+                        <Image src={u} alt={`model ${i + 1}`} width={200} height={200} className="object-contain max-h-48 w-auto" />
                       </div>
                     ))}
                   </div>
@@ -358,17 +434,17 @@ export default function ProductDetailClient({ product, gradeLabel, brandInfo }: 
       {/* ── 상세 사이즈 이미지 ── */}
       {product.sizeImages && product.sizeImages.length > 0 && (
         <div className="mt-12 border-t border-slate-100 pt-10">
-          <h2 className="text-lg font-bold text-slate-800 mb-5">상세 사이즈 / 상품 상세</h2>
+          <h2 className="text-lg font-bold text-slate-800 mb-5">{t('product.detailSizeTitle')}</h2>
           <div className="flex gap-3 overflow-x-auto pb-2 mb-4">
             {product.sizeImages.map((img: string, i: number) => (
               <button key={i} onClick={() => setSizeImgIdx(i)}
                 className={`relative w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden border-2 transition-colors ${sizeImgIdx === i ? 'border-primary-500' : 'border-slate-200'}`}>
-                <Image src={img} alt={`상세 ${i + 1}`} fill className="object-cover" />
+                <Image src={img} alt={`detail ${i + 1}`} fill className="object-cover" />
               </button>
             ))}
           </div>
           <div className="relative w-full max-w-lg rounded-2xl overflow-hidden border border-slate-100">
-            <Image src={product.sizeImages[sizeImgIdx]} alt="상세 사이즈" width={600} height={600} className="w-full object-contain" />
+            <Image src={product.sizeImages[sizeImgIdx]} alt="detail size" width={600} height={600} className="w-full object-contain" />
           </div>
         </div>
       )}

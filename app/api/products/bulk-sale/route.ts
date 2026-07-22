@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { hasAdminAccess } from '@/lib/adminAccess';
+import { upsertBrandNotice } from '@/lib/notify';
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || (session.user as any)?.role !== 'ADMIN')
+  if (!session || !hasAdminAccess((session.user as any)?.role))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { productIds, saleType, saleValue } = await req.json();
@@ -17,12 +19,25 @@ export async function POST(req: NextRequest) {
     data:  { isOnSale: true, saleType, saleValue: Number(saleValue) },
   });
 
+  const products = await prisma.product.findMany({
+    where: { id: { in: productIds } },
+    select: { brand: true, name: true },
+  });
+  const groups = new Map<string, number>();
+  for (const p of products) {
+    const key = p.brand?.trim() || p.name;
+    groups.set(key, (groups.get(key) ?? 0) + 1);
+  }
+  for (const [displayName, groupCount] of Array.from(groups.entries())) {
+    await upsertBrandNotice(displayName, 'SALE', groupCount);
+  }
+
   return NextResponse.json({ ok: true, count: productIds.length });
 }
 
 export async function DELETE(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || (session.user as any)?.role !== 'ADMIN')
+  if (!session || !hasAdminAccess((session.user as any)?.role))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { productIds } = await req.json();

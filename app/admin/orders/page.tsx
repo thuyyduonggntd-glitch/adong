@@ -1,17 +1,25 @@
 'use client';
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { Fragment, useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import { formatPrice, formatDate } from '@/lib/utils';
+import { printInboundRows, type InboundPrintRow } from '@/lib/printInbound';
+import EditPriceModal from '@/components/admin/EditPriceModal';
+import BrandPriceModal, { type BrandModalRow } from '@/components/admin/BrandPriceModal';
+
+type DailyRow = InboundPrintRow & { id: string; price: number | null };
 
 /* ── 타입 ── */
 type SaleProduct = {
   id: string; name: string; images: string[]; brand: string | null; colors: string[];
   isOnSale: boolean; saleType: string | null; saleValue: number | null;
+  productNumber?: string | null;
 };
 type AdminProduct = SaleProduct & { category: { name: string } };
-type OrderItem = {
+/* 세일 스냅샷: OrderItem/InboundItem 자체에 저장된 "주문·입고 당시" 세일 상태 (실시간 product.isOnSale 아님) */
+type SaleSnapshot = { isOnSale: boolean; saleType: string | null; saleValue: number | null };
+type OrderItem = SaleSnapshot & {
   id: string; quantity: number; price: number; size: string; color: string;
-  arrivedAt: string | null; cancelledAt: string | null;
+  confirmedAt: string | null; arrivedAt: string | null; cancelledAt: string | null;
   outOfStockAt: string | null; unshippedAt: string | null;
   remark: string | null;
   cancelLocked: boolean;
@@ -22,17 +30,17 @@ type Order = {
   user: { id: string; name: string; email: string; phone: string | null };
   items: OrderItem[];
 };
-type ArrivedItem = {
+type ArrivedItem = SaleSnapshot & {
   id: string; quantity: number; size: string | null; color: string | null; arrivedAt: string; price: number;
   product: SaleProduct;
   order: { id: string; status: string; userId: string; createdAt: string; note: string | null; user: { name: string; email: string } };
 };
-type CancelledItem = {
+type CancelledItem = SaleSnapshot & {
   id: string; quantity: number; size: string | null; color: string | null; cancelledAt: string; price: number;
   product: SaleProduct;
   order: { id: string; status: string; userId: string; createdAt: string; note: string | null; user: { name: string; email: string } };
 };
-type OutStockUnshippedItem = {
+type OutStockUnshippedItem = SaleSnapshot & {
   id: string; quantity: number; size: string | null; color: string | null; price: number;
   outOfStockAt: string | null; unshippedAt: string | null;
   remark: string | null;
@@ -41,23 +49,22 @@ type OutStockUnshippedItem = {
 };
 type InboundProduct = {
   id: string; name: string; images: string[]; brand: string | null;
-  isOnSale: boolean; saleType: string | null; saleValue: number | null;
-  sizes: string[]; colors: string[];
+  sizes: string[]; colors: string[]; productNumber?: string | null;
 };
 type InboundRec = {
   id: string; brand: string; note: string | null; arrivedAt: string;
   user: { id: string; name: string; email: string } | null;
-  items: Array<{
+  items: Array<SaleSnapshot & {
     id: string; name: string; quantity: number;
-    size: string | null; color: string | null;
+    size: string | null; color: string | null; price: number | null;
     product: InboundProduct | null;
   }>;
 };
-type FlatRow = {
+type FlatRow = SaleSnapshot & {
   rowKey: string; itemId: string; orderId: string; userId: string; userName: string;
   brand: string; product: AdminProduct; size: string; color: string; quantity: number; price: number;
   orderDate: string; status: string; itemCancelLocked: boolean; orderCancelLocked: boolean;
-  arrivedAt: string | null; cancelledAt: string | null;
+  confirmedAt: string | null; arrivedAt: string | null; cancelledAt: string | null;
   outOfStockAt: string | null; unshippedAt: string | null;
   note: string | null;
 };
@@ -67,14 +74,15 @@ function flattenOrders(orders: Order[]): FlatRow[] {
     o.items.map((item) => ({
       rowKey: `${o.id}__${item.id}`,
       itemId: item.id, orderId: o.id, userId: o.userId, userName: o.user.name,
-      brand: item.product.brand || item.product.category.name,
+      brand: item.product.brand || item.product.category?.name || '',
       product: item.product, size: item.size, color: item.color,
       quantity: item.quantity, price: item.price,
       orderDate: o.createdAt, status: o.status,
       itemCancelLocked: item.cancelLocked, orderCancelLocked: o.cancelLocked,
-      arrivedAt: item.arrivedAt, cancelledAt: item.cancelledAt,
+      confirmedAt: item.confirmedAt, arrivedAt: item.arrivedAt, cancelledAt: item.cancelledAt,
       outOfStockAt: item.outOfStockAt, unshippedAt: item.unshippedAt,
       note: o.note,
+      isOnSale: item.isOnSale, saleType: item.saleType, saleValue: item.saleValue,
     }))
   );
 }
@@ -87,15 +95,26 @@ function formatDateTime(dt: string) {
 }
 
 /* ── 공통 상품 셀 ── */
-function ProductCells({ product, brand, size, color, quantity, price }: {
+/* isOnSale/saleType/saleValue: 실시간 product 상태가 아니라 "주문/입고 당시" 스냅샷을 받는다 */
+function ProductCells({ product, brand, size, color, quantity, price, isOnSale, saleType, saleValue, onBrandClick, onEditPrice }: {
   product: SaleProduct; brand: string; size: string; color: string; quantity: number; price: number;
+  isOnSale: boolean; saleType: string | null; saleValue: number | null;
+  onBrandClick?: (brand: string) => void;
+  onEditPrice?: () => void;
 }) {
   const colorIdx = product.colors?.indexOf(color) ?? -1;
   const imgSrc = (colorIdx >= 0 && product.images[colorIdx]) ? product.images[colorIdx] : (product.images[0] || 'https://placehold.co/40x40/EFF6FF/2563EB?text=상품');
   return (
     <>
       <td className="px-3 py-3">
-        <span className="text-xs font-semibold text-primary-600 bg-primary-50 px-2 py-0.5 rounded whitespace-nowrap">{brand}</span>
+        {onBrandClick ? (
+          <button onClick={() => onBrandClick(brand)}
+            className="text-xs font-semibold text-primary-600 bg-primary-50 px-2 py-0.5 rounded whitespace-nowrap hover:bg-primary-100 transition-colors">
+            {brand}
+          </button>
+        ) : (
+          <span className="text-xs font-semibold text-primary-600 bg-primary-50 px-2 py-0.5 rounded whitespace-nowrap">{brand}</span>
+        )}
       </td>
       <td className="px-3 py-3">
         <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-primary-50">
@@ -104,19 +123,25 @@ function ProductCells({ product, brand, size, color, quantity, price }: {
       </td>
       <td className="px-3 py-3 font-medium text-slate-800 max-w-[150px]">
         <span className="block truncate">{product.name}</span>
-        {product.isOnSale && (
-          <span className="text-xs font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded mt-0.5 inline-block">
-            SALE {product.saleType === 'RATE' ? `${product.saleValue}%` : product.saleValue ? `${product.saleValue.toLocaleString()}원` : ''}
-          </span>
-        )}
+        {product.productNumber && <span className="block text-xs text-slate-400 font-mono">{product.productNumber}</span>}
       </td>
       <td className="px-3 py-3 text-xs text-slate-600">{size || '-'}</td>
       <td className="px-3 py-3 text-xs text-slate-600">{color || '-'}</td>
       <td className="px-3 py-3 text-center font-semibold">{quantity}</td>
+      <td className="px-3 py-3 text-center">
+        {isOnSale
+          ? <span className="text-xs font-bold text-red-500 whitespace-nowrap">{saleType === 'RATE' ? `${saleValue}%` : saleValue ? `${saleValue.toLocaleString()}원` : ''}</span>
+          : <span className="text-slate-300 text-xs">-</span>}
+      </td>
       <td className="px-3 py-3 text-right font-semibold text-primary-700">{formatPrice(price)}</td>
       <td className="px-3 py-3 text-right font-bold text-slate-800 whitespace-nowrap">
         {formatPrice(price * quantity)}
       </td>
+      {onEditPrice && (
+        <td className="px-3 py-3 text-center">
+          <button onClick={onEditPrice} className="text-xs text-primary-600 hover:underline whitespace-nowrap">수정</button>
+        </td>
+      )}
     </>
   );
 }
@@ -130,8 +155,10 @@ function ProductHeaders({ hasEdit }: { hasEdit?: boolean }) {
       <th className="px-3 py-3 text-left">사이즈</th>
       <th className="px-3 py-3 text-left">컬러</th>
       <th className="px-3 py-3 text-center">수량</th>
+      <th className="px-3 py-3 text-center">세일율</th>
       <th className="px-3 py-3 text-right">단가</th>
       <th className="px-3 py-3 text-right">TOTAL</th>
+      {hasEdit && <th className="px-3 py-3 text-center">관리</th>}
     </>
   );
 }
@@ -196,7 +223,8 @@ function OrderTable({ rows, selected, onToggleRow, onToggleAll, actions }: {
                         </span>
                       )}
                     </td>
-                    <ProductCells product={row.product} brand={row.brand} size={row.size} color={row.color} quantity={row.quantity} price={row.price} />
+                    <ProductCells product={row.product} brand={row.brand} size={row.size} color={row.color} quantity={row.quantity} price={row.price}
+                      isOnSale={row.isOnSale} saleType={row.saleType} saleValue={row.saleValue} />
                     <td className="px-3 py-3 text-xs text-slate-400 whitespace-nowrap">{formatDateTime(row.orderDate)}</td>
                     <td className="px-3 py-3">
                       {isLocked
@@ -220,6 +248,7 @@ function OrderTable({ rows, selected, onToggleRow, onToggleAll, actions }: {
               <tr>
                 <td colSpan={8} className="px-3 py-2">합계</td>
                 <td className="px-3 py-2 text-center">{totalQty}</td>
+                <td />
                 <td />
                 <td className="px-3 py-2 text-right text-primary-700">{formatPrice(totalAmt)}</td>
                 <td colSpan={3} />
@@ -377,7 +406,11 @@ function UserSearchInput({ selected, onSelect }: {
 }
 
 /* ── 공급업체 입고 섹션 ── */
-function InboundSection({ inbounds, onDelete, showForm }: { inbounds: InboundRec[]; onDelete: (id: string) => void; showForm?: boolean }) {
+function InboundSection({ inbounds, onDelete, showForm, onEditPrice, onBrandClick }: {
+  inbounds: InboundRec[]; onDelete: (id: string) => void; showForm?: boolean;
+  onEditPrice?: (item: { id: string; name: string; size: string | null; color: string | null; price: number | null }) => void;
+  onBrandClick?: (brand: string) => void;
+}) {
   const [form, setForm] = useState({ brand: '', note: '', arrivedAt: new Date().toISOString().slice(0, 10) });
   const [selectedUser, setSelectedUser] = useState<UserSuggestion | null>(null);
   const [rows, setRows] = useState<InboundFormRow[]>([{ ...EMPTY_ROW }]);
@@ -548,7 +581,14 @@ function InboundSection({ inbounds, onDelete, showForm }: { inbounds: InboundRec
         <div key={ib.id} className="card overflow-hidden">
           <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <span className="text-xs font-bold text-primary-600 bg-primary-50 px-2 py-1 rounded">{ib.brand}</span>
+              {onBrandClick ? (
+                <button onClick={() => onBrandClick(ib.brand)}
+                  className="text-xs font-bold text-primary-600 bg-primary-50 px-2 py-1 rounded hover:bg-primary-100 transition-colors">
+                  {ib.brand}
+                </button>
+              ) : (
+                <span className="text-xs font-bold text-primary-600 bg-primary-50 px-2 py-1 rounded">{ib.brand}</span>
+              )}
               <span className="text-xs text-slate-500">{formatDate(ib.arrivedAt)}</span>
               {ib.note && <span className="text-xs text-slate-400">· {ib.note}</span>}
               {ib.user && (
@@ -568,7 +608,9 @@ function InboundSection({ inbounds, onDelete, showForm }: { inbounds: InboundRec
                   <th className="px-4 py-2 text-left">사이즈</th>
                   <th className="px-4 py-2 text-left">컬러</th>
                   <th className="px-4 py-2 text-center">수량</th>
-                  <th className="px-4 py-2 text-center">SALE</th>
+                  <th className="px-4 py-2 text-center">세일율</th>
+                  <th className="px-4 py-2 text-right">금액</th>
+                  {onEditPrice && <th className="px-4 py-2 text-center">관리</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -583,15 +625,24 @@ function InboundSection({ inbounds, onDelete, showForm }: { inbounds: InboundRec
                       </td>
                       <td className="px-4 py-2.5 font-medium max-w-[180px]">
                         <span className="block truncate">{it.name}</span>
+                        {p?.productNumber && <span className="block text-xs text-slate-400 font-mono">{p.productNumber}</span>}
                       </td>
                       <td className="px-4 py-2.5 text-slate-500 text-xs">{it.size || '-'}</td>
                       <td className="px-4 py-2.5 text-slate-500 text-xs">{it.color || '-'}</td>
                       <td className="px-4 py-2.5 text-center font-semibold">{it.quantity}</td>
                       <td className="px-4 py-2.5 text-center">
-                        {p?.isOnSale
-                          ? <span className="text-xs font-bold text-red-500 bg-red-50 px-2 py-0.5 rounded-full">SALE</span>
+                        {it.isOnSale
+                          ? <span className="text-xs font-bold text-red-500 whitespace-nowrap">{it.saleType === 'RATE' ? `${it.saleValue}%` : it.saleValue ? `${it.saleValue.toLocaleString()}원` : ''}</span>
                           : <span className="text-slate-300 text-xs">-</span>}
                       </td>
+                      <td className="px-4 py-2.5 text-right font-semibold text-primary-700 whitespace-nowrap">
+                        {it.price !== null ? formatPrice(it.price) : <span className="text-slate-300 font-normal">-</span>}
+                      </td>
+                      {onEditPrice && (
+                        <td className="px-4 py-2.5 text-center">
+                          <button onClick={() => onEditPrice(it)} className="text-xs text-primary-600 hover:underline whitespace-nowrap">수정</button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -619,6 +670,7 @@ function makeToggleAll(ids: string[], selected: Set<string>, setSelected: React.
 /* ── 브랜드별 신규접수 뷰 (아코디언) ── */
 function BrandOrderView({ rows }: { rows: FlatRow[] }) {
   const [openBrand, setOpenBrand] = useState<string | null>(null);
+  const [openGroupKey, setOpenGroupKey] = useState<string | null>(null);
 
   const brandGroups = useMemo(() => {
     const map = new Map<string, FlatRow[]>();
@@ -638,6 +690,26 @@ function BrandOrderView({ rows }: { rows: FlatRow[] }) {
       {brandGroups.map(([brand, items]) => {
         const totalQty = items.reduce((s, r) => s + r.quantity, 0);
         const isOpen = openBrand === brand;
+
+        // 같은 상품(productId)+사이즈+컬러인 주문건을 한 줄로 통합, 수량은 합산
+        const productGroups = (() => {
+          const map = new Map<string, FlatRow[]>();
+          items.forEach((r) => {
+            const key = `${r.product.id}::${r.size}::${r.color}`;
+            const list = map.get(key) ?? [];
+            list.push(r);
+            map.set(key, list);
+          });
+          return Array.from(map.entries()).map(([key, groupItems]) => ({
+            key,
+            product: groupItems[0].product,
+            size: groupItems[0].size,
+            color: groupItems[0].color,
+            quantity: groupItems.reduce((s, r) => s + r.quantity, 0),
+            items: groupItems,
+          }));
+        })();
+
         return (
           <div key={brand} className="card overflow-hidden">
             <button
@@ -664,38 +736,65 @@ function BrandOrderView({ rows }: { rows: FlatRow[] }) {
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
                     <tr>
-                      <th className="px-4 py-2.5 text-left">아이디</th>
                       <th className="px-4 py-2.5 text-left">상품명</th>
                       <th className="px-4 py-2.5 text-left">사이즈</th>
                       <th className="px-4 py-2.5 text-left">컬러</th>
                       <th className="px-4 py-2.5 text-center">수량</th>
+                      <th className="px-4 py-2.5 text-left">주문 건수</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {items.map((r) => (
-                      <tr key={r.rowKey} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-4 py-2.5 text-xs text-slate-600 whitespace-nowrap">
-                          {r.userName}
-                          <span className="block text-slate-400 font-mono">#{r.orderId.slice(-6).toUpperCase()}</span>
-                          {r.note && (
-                            <span className="block mt-0.5 text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[10px] leading-tight max-w-[120px] break-words whitespace-normal">
-                              {r.note}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2.5 font-medium text-slate-800 max-w-[200px]">
-                          <span className="block truncate">{r.product.name}</span>
-                        </td>
-                        <td className="px-4 py-2.5 text-xs text-slate-600">{r.size || '-'}</td>
-                        <td className="px-4 py-2.5 text-xs text-slate-600">{r.color || '-'}</td>
-                        <td className="px-4 py-2.5 text-center font-semibold text-slate-800">{r.quantity}</td>
-                      </tr>
-                    ))}
+                    {productGroups.map((g) => {
+                      const isGroupOpen = openGroupKey === `${brand}::${g.key}`;
+                      return (
+                        <Fragment key={g.key}>
+                          <tr
+                            onClick={() => setOpenGroupKey(isGroupOpen ? null : `${brand}::${g.key}`)}
+                            className="hover:bg-slate-50 transition-colors cursor-pointer"
+                          >
+                            <td className="px-4 py-2.5 font-medium text-slate-800 max-w-[200px]">
+                              <span className="block truncate">{g.product.name}</span>
+                              {g.product.productNumber && <span className="block text-xs text-slate-400 font-mono">{g.product.productNumber}</span>}
+                            </td>
+                            <td className="px-4 py-2.5 text-xs text-slate-600">{g.size || '-'}</td>
+                            <td className="px-4 py-2.5 text-xs text-slate-600">{g.color || '-'}</td>
+                            <td className="px-4 py-2.5 text-center font-semibold text-slate-800">{g.quantity}</td>
+                            <td className="px-4 py-2.5 text-xs text-slate-500">
+                              <span className="inline-flex items-center gap-1">
+                                {g.items.length}건
+                                <svg
+                                  className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${isGroupOpen ? 'rotate-180' : ''}`}
+                                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                >
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                              </span>
+                            </td>
+                          </tr>
+                          {isGroupOpen && g.items.map((r) => (
+                            <tr key={r.rowKey} className="bg-slate-50/60 text-xs text-slate-500">
+                              <td className="px-4 py-2 pl-8" colSpan={3}>
+                                {r.userName}
+                                <span className="ml-1.5 text-slate-400 font-mono">#{r.orderId.slice(-6).toUpperCase()}</span>
+                                {r.note && (
+                                  <span className="ml-1.5 text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[10px] leading-tight">
+                                    {r.note}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2 text-center font-medium text-slate-600">{r.quantity}</td>
+                              <td className="px-4 py-2" />
+                            </tr>
+                          ))}
+                        </Fragment>
+                      );
+                    })}
                   </tbody>
                   <tfoot className="border-t border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700">
                     <tr>
-                      <td colSpan={4} className="px-4 py-2">합계</td>
+                      <td colSpan={3} className="px-4 py-2">합계</td>
                       <td className="px-4 py-2 text-center">{totalQty}</td>
+                      <td className="px-4 py-2" />
                     </tr>
                   </tfoot>
                 </table>
@@ -708,7 +807,7 @@ function BrandOrderView({ rows }: { rows: FlatRow[] }) {
   );
 }
 
-const TABS = ['주문접수', '주문확인', '일별입고', '전체입고', '취소 상품', '품절/미송'] as const;
+const TABS = ['주문접수', '주문확인', '일별입고', '전체입고', '품절/미송'] as const;
 type Tab = typeof TABS[number];
 
 /* ── 메인 페이지 ── */
@@ -720,13 +819,13 @@ export default function AdminOrdersPage() {
   const [allInbounds, setAllInbounds]         = useState<InboundRec[]>([]);
   const [todayArrivedItems, setTodayArrivedItems]           = useState<ArrivedItem[]>([]);
   const [allArrivedOrderItems, setAllArrivedOrderItems]     = useState<ArrivedItem[]>([]);
-  const [cancelledItems, setCancelledItems]                 = useState<CancelledItem[]>([]);
   const [outStockUnshippedItems, setOutStockUnshippedItems] = useState<OutStockUnshippedItem[]>([]);
   const [loading, setLoading]       = useState(true);
   const [selected, setSelected]     = useState<Set<string>>(new Set()); // itemId 기반, 탭 전환 시 유지
   const [search, setSearch]         = useState('');
   const [inboundDateFilter, setInboundDateFilter]   = useState('');
   const [inboundBrandFilter, setInboundBrandFilter] = useState('');
+  const [inboundIdFilter, setInboundIdFilter]       = useState('');
   const [cancelPolicy, setCancelPolicy] = useState({
     globalEnabled: false,
     timeLimit: null as number | null,
@@ -749,23 +848,22 @@ export default function AdminOrdersPage() {
       fetch('/api/inbound').then((r) => r.json()),
       fetch('/api/orders/items?arrivedToday=1').then((r) => r.json()),
       fetch('/api/cancel-policy').then((r) => r.json()),
-      fetch('/api/orders/items?cancelled=1').then((r) => r.json()),
       fetch('/api/orders/items?outOfStockOrUnshipped=1').then((r) => r.json()),
       fetch('/api/orders/items?allArrived=1').then((r) => r.json()),
-    ]).then(([p, c, ti, ai, arrived, pol, cancelled, ousu, allArrived]) => {
+    ]).then(([p, c, ti, ai, arrived, pol, ousu, allArrived]) => {
       setPendingOrders(p); setConfirmedOrders(c);
       setTodayInbounds(ti); setAllInbounds(ai);
       setTodayArrivedItems(arrived);
       setCancelPolicy({ globalEnabled: pol.globalEnabled ?? false, timeLimit: pol.timeLimit ?? null, cancelFrom: pol.cancelFrom ?? '', cancelTo: pol.cancelTo ?? '' });
-      setCancelledItems(Array.isArray(cancelled) ? cancelled : []);
       setOutStockUnshippedItems(Array.isArray(ousu) ? ousu : []);
       setAllArrivedOrderItems(Array.isArray(allArrived) ? allArrived : []);
       setLoading(false);
     });
   }, []);
 
-  const pendingRows   = useMemo(() => flattenOrders(pendingOrders).filter((r) => !r.cancelledAt), [pendingOrders]);
-  const confirmedRows = useMemo(() => flattenOrders(confirmedOrders).filter((r) => !r.arrivedAt && !r.cancelledAt && !r.outOfStockAt && !r.unshippedAt), [confirmedOrders]);
+  const allOrderRows  = useMemo(() => flattenOrders([...pendingOrders, ...confirmedOrders]), [pendingOrders, confirmedOrders]);
+  const pendingRows   = useMemo(() => allOrderRows.filter((r) => !r.confirmedAt && !r.cancelledAt && !r.arrivedAt && !r.outOfStockAt && !r.unshippedAt), [allOrderRows]);
+  const confirmedRows = useMemo(() => allOrderRows.filter((r) => !!r.confirmedAt && !r.arrivedAt && !r.cancelledAt && !r.outOfStockAt && !r.unshippedAt), [allOrderRows]);
 
   const filterRows = useCallback((rows: FlatRow[]) => {
     if (!search) return rows;
@@ -805,11 +903,109 @@ export default function AdminOrdersPage() {
     });
   }, [allArrivedOrderItems, inboundDateFilter, inboundBrandFilter]);
 
+  /* ── 일별입고 인쇄용 통합 행 (주문 입고 + 공급업체 입고) ── */
+  const todayInboundRows: DailyRow[] = useMemo(() => [
+    ...todayArrivedItems.map((it) => ({
+      key: `o-${it.id}`, id: it.id, source: 'order' as const, userName: it.order.user.name,
+      brand: it.product.brand || '-', name: it.product.name, size: it.size || '-', color: it.color || '-', quantity: it.quantity,
+      image: it.product.images?.[0] ?? null, price: it.price,
+    })),
+    ...todayInbounds.flatMap((ib) => ib.items.map((item) => ({
+      key: `s-${item.id}`, id: item.id, source: 'supplier' as const, userName: ib.user?.name ?? '-',
+      brand: item.product?.brand || ib.brand, name: item.product?.name || item.name,
+      size: item.size || '-', color: item.color || '-', quantity: item.quantity,
+      image: item.product?.images?.[0] ?? null, price: item.price,
+    }))),
+  ], [todayArrivedItems, todayInbounds]);
+
+  /* ── 일별입고 아이디·브랜드 필터 (주문 상품 입고 + 공급업체 입고 공통 적용, 인쇄 대상도 이 필터를 따름) ── */
+  const [dailyIdFilter, setDailyIdFilter]       = useState('');
+  const [dailyBrandFilter, setDailyBrandFilter] = useState('');
+
+  const dailyIdOptions    = useMemo(() => Array.from(new Set(todayInboundRows.map((r) => r.userName))).sort(), [todayInboundRows]);
+  const dailyBrandOptions = useMemo(() => Array.from(new Set(todayInboundRows.map((r) => r.brand))).sort(),    [todayInboundRows]);
+
+  const filteredTodayArrivedItems = useMemo(() => todayArrivedItems.filter((it) =>
+    (!dailyIdFilter || it.order.user.name === dailyIdFilter) &&
+    (!dailyBrandFilter || (it.product.brand || '-') === dailyBrandFilter)
+  ), [todayArrivedItems, dailyIdFilter, dailyBrandFilter]);
+
+  const filteredTodayInbounds = useMemo(() => todayInbounds
+    .map((ib) => ({
+      ...ib,
+      items: ib.items.filter((item) => !dailyBrandFilter || (item.product?.brand || ib.brand) === dailyBrandFilter),
+    }))
+    .filter((ib) => (!dailyIdFilter || ib.user?.name === dailyIdFilter) && ib.items.length > 0),
+  [todayInbounds, dailyIdFilter, dailyBrandFilter]);
+
+  const filteredTodayInboundRows = useMemo(() => todayInboundRows.filter((r) =>
+    (!dailyIdFilter || r.userName === dailyIdFilter) &&
+    (!dailyBrandFilter || r.brand === dailyBrandFilter)
+  ), [todayInboundRows, dailyIdFilter, dailyBrandFilter]);
+
+  const handleDailyPrint = () => {
+    if (filteredTodayInboundRows.length === 0) return;
+    printInboundRows(filteredTodayInboundRows, `일별입고 - ${new Date().toLocaleDateString('ko-KR')}`);
+  };
+
+  /* ── 입고 상품 금액/세일율 수정 (단건 + 브랜드 일괄) ── */
+  const [editModal, setEditModal] = useState<{ source: 'order' | 'supplier'; id: string; title: string; price: number } | null>(null);
+  const [brandModal, setBrandModal] = useState<{ brand: string; rows: BrandModalRow[] } | null>(null);
+
+  const openBrandModal = (brand: string, rows: DailyRow[]) => {
+    const brandRows: BrandModalRow[] = rows
+      .filter((r) => r.brand === brand)
+      .map((r) => ({ key: r.key, id: r.id, source: r.source, name: r.name, size: r.size, color: r.color, quantity: r.quantity, price: r.price ?? 0 }));
+    setBrandModal({ brand, rows: brandRows });
+  };
+
+  const applyPriceUpdate = (source: 'order' | 'supplier', id: string, price: number) => {
+    if (source === 'order') {
+      setTodayArrivedItems((prev) => prev.map((it) => it.id === id ? { ...it, price } : it));
+      setAllArrivedOrderItems((prev) => prev.map((it) => it.id === id ? { ...it, price } : it));
+    } else {
+      const patchInbounds = (list: InboundRec[]) => list.map((ib) => ({
+        ...ib, items: ib.items.map((item) => item.id === id ? { ...item, price } : item),
+      }));
+      setTodayInbounds(patchInbounds);
+      setAllInbounds(patchInbounds);
+    }
+  };
+
+  const handleSaveSinglePrice = async (newPrice: number) => {
+    if (!editModal) return;
+    const endpoint = editModal.source === 'order' ? '/api/orders/items/price' : '/api/inbound/items/price';
+    const res = await fetch(endpoint, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updates: [{ id: editModal.id, price: newPrice }] }),
+    });
+    if (res.ok) applyPriceUpdate(editModal.source, editModal.id, newPrice);
+    else alert('금액 수정에 실패했습니다.');
+    setEditModal(null);
+  };
+
+  const handleSaveBrandChanges = async (changes: { key: string; id: string; source: 'order' | 'supplier'; price: number }[]) => {
+    const orderUpdates    = changes.filter((c) => c.source === 'order').map((c) => ({ id: c.id, price: c.price }));
+    const supplierUpdates = changes.filter((c) => c.source === 'supplier').map((c) => ({ id: c.id, price: c.price }));
+
+    const results = await Promise.all([
+      orderUpdates.length > 0
+        ? fetch('/api/orders/items/price', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ updates: orderUpdates }) })
+        : null,
+      supplierUpdates.length > 0
+        ? fetch('/api/inbound/items/price', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ updates: supplierUpdates }) })
+        : null,
+    ]);
+    if (results.some((r) => r && !r.ok)) alert('일부 항목 저장에 실패했습니다.');
+
+    changes.forEach((c) => applyPriceUpdate(c.source, c.id, c.price));
+    setBrandModal(null);
+  };
+
   /* ── 선택 파생 상태 (탭별 소스 추적) ── */
   const selPending   = useMemo(() => pendingRows.filter((r) => selected.has(r.itemId)),            [pendingRows,            selected]);
   const selConfirmed = useMemo(() => confirmedRows.filter((r) => selected.has(r.itemId)),          [confirmedRows,          selected]);
   const selArrived   = useMemo(() => todayArrivedItems.filter((it) => selected.has(it.id)),        [todayArrivedItems,       selected]);
-  const selCancelled = useMemo(() => cancelledItems.filter((it) => selected.has(it.id)),           [cancelledItems,         selected]);
   const selOusu      = useMemo(() => outStockUnshippedItems.filter((it) => selected.has(it.id)),   [outStockUnshippedItems, selected]);
   const totalSelectedCount = selected.size;
 
@@ -818,34 +1014,31 @@ export default function AdminOrdersPage() {
     '주문접수': selPending.length,
     '주문확인': selConfirmed.length,
     '일별입고': selArrived.length,
-    '취소 상품': selCancelled.length,
     '품절/미송': selOusu.length,
-  }), [selPending, selConfirmed, selArrived, selCancelled, selOusu]);
+  }), [selPending, selConfirmed, selArrived, selOusu]);
 
   /* ── 플로팅 바 버튼 표시 조건 ──
      취소상품/품절미송 탭 → 주문확인·입고만 허용 (취소·품절·미송 불가) ── */
-  const canConfirm  = selPending.length > 0 || selArrived.length > 0 || selCancelled.length > 0 || selOusu.length > 0;
-  const canArrive   = selPending.length > 0 || selConfirmed.length > 0 || selCancelled.length > 0 || selOusu.length > 0;
+  const canConfirm  = selPending.length > 0 || selArrived.length > 0 || selOusu.length > 0;
+  const canArrive   = selPending.length > 0 || selConfirmed.length > 0 || selOusu.length > 0;
   const canCancel   = selPending.length > 0 || selConfirmed.length > 0 || selArrived.length > 0;
   const canOusu     = selPending.length > 0 || selConfirmed.length > 0 || selArrived.length > 0;
   const canLock     = selPending.length > 0 || selConfirmed.length > 0;
 
   /* ── 전체 데이터 리프레시 ── */
   const refreshData = useCallback(async () => {
-    const [p, c, ti, ai, arrived, cancelled, ousu, allArrived] = await Promise.all([
+    const [p, c, ti, ai, arrived, ousu, allArrived] = await Promise.all([
       fetch('/api/orders?admin=1&status=PENDING').then((r) => r.json()),
       fetch('/api/orders?admin=1&status=CONFIRMED').then((r) => r.json()),
       fetch('/api/inbound?today=1').then((r) => r.json()),
       fetch('/api/inbound').then((r) => r.json()),
       fetch('/api/orders/items?arrivedToday=1').then((r) => r.json()),
-      fetch('/api/orders/items?cancelled=1').then((r) => r.json()),
       fetch('/api/orders/items?outOfStockOrUnshipped=1').then((r) => r.json()),
       fetch('/api/orders/items?allArrived=1').then((r) => r.json()),
     ]);
     setPendingOrders(p); setConfirmedOrders(c);
     setTodayInbounds(ti); setAllInbounds(ai);
     setTodayArrivedItems(arrived);
-    setCancelledItems(Array.isArray(cancelled) ? cancelled : []);
     setOutStockUnshippedItems(Array.isArray(ousu) ? ousu : []);
     setAllArrivedOrderItems(Array.isArray(allArrived) ? allArrived : []);
     setSelected(new Set());
@@ -858,22 +1051,21 @@ export default function AdminOrdersPage() {
 
   const toggleAllPending   = useCallback(() => makeToggleAll(filteredPending.map((r) => r.itemId),         selected, setSelected)(), [filteredPending,         selected]);
   const toggleAllConfirmed = useCallback(() => makeToggleAll(filteredConfirmed.map((r) => r.itemId),       selected, setSelected)(), [filteredConfirmed,       selected]);
-  const toggleAllArrived   = useCallback(() => makeToggleAll(todayArrivedItems.map((it) => it.id),         selected, setSelected)(), [todayArrivedItems,       selected]);
-  const toggleAllCancelled = useCallback(() => makeToggleAll(cancelledItems.map((it) => it.id),            selected, setSelected)(), [cancelledItems,          selected]);
+  const toggleAllArrived   = useCallback(() => makeToggleAll(filteredTodayArrivedItems.map((it) => it.id), selected, setSelected)(), [filteredTodayArrivedItems, selected]);
   const toggleAllOusu      = useCallback(() => makeToggleAll(outStockUnshippedItems.map((it) => it.id),    selected, setSelected)(), [outStockUnshippedItems,  selected]);
 
   /* ── 통합 액션 함수 ── */
 
-  // 주문확인: pending→confirmed + arrived/cancelled/ousu→confirmed 되돌리기
+  // 주문확인: 선택한 아이템만 confirmedAt 설정 + arrived/ousu→confirmed 되돌리기
   const actionConfirm = async () => {
-    const pendingOrderIds = Array.from(new Set(selPending.map((r) => r.orderId)));
-    const revertItemIds   = [...selArrived, ...selCancelled, ...selOusu].map((it) => it.id);
-    if (!pendingOrderIds.length && !revertItemIds.length) return;
-    const label = `주문확인 처리 (접수 ${selPending.length}건 + 되돌리기 ${revertItemIds.length}건)`;
+    const pendingItemIds = selPending.map((r) => r.itemId);
+    const revertItemIds  = [...selArrived, ...selOusu].map((it) => it.id);
+    if (!pendingItemIds.length && !revertItemIds.length) return;
+    const label = `주문확인 처리 (접수 ${pendingItemIds.length}건 + 되돌리기 ${revertItemIds.length}건)`;
     if (!confirm(label + '\n진행하시겠습니까?')) return;
 
-    if (pendingOrderIds.length)
-      await fetch('/api/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderIds: pendingOrderIds, status: 'CONFIRMED' }) });
+    if (pendingItemIds.length)
+      await fetch('/api/orders/items', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemIds: pendingItemIds, action: 'confirm' }) });
     if (revertItemIds.length)
       await fetch('/api/orders/items', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemIds: revertItemIds, action: 'revertToConfirmed' }) });
 
@@ -885,7 +1077,6 @@ export default function AdminOrdersPage() {
     const itemIds = [
       ...selPending.map((r) => r.itemId),
       ...selConfirmed.map((r) => r.itemId),
-      ...selCancelled.map((it) => it.id),
       ...selOusu.map((it) => it.id),
     ];
     if (!itemIds.length) return;
@@ -988,17 +1179,14 @@ export default function AdminOrdersPage() {
     alert('취소 정책 저장 완료');
   };
 
-  /* 합계 (주문 시 저장된 price 기준) */
-  const arrivedTotal   = todayArrivedItems.reduce((s, it) => s + it.price * it.quantity, 0);
-  const cancelledTotal = cancelledItems.reduce((s, it) => s + it.price * it.quantity, 0);
+  /* 합계 (주문 시 저장된 price 기준, 필터 적용된 항목만) */
+  const arrivedTotal = filteredTodayArrivedItems.reduce((s, it) => s + it.price * it.quantity, 0);
 
-  /* 일별입고/취소/품절미송 전체선택 체크 */
-  const allArrivedSel = todayArrivedItems.length > 0 && todayArrivedItems.every((it) => selected.has(it.id));
-  const someArrivedSel = todayArrivedItems.some((it) => selected.has(it.id));
-  const allCancelledSel = cancelledItems.length > 0 && cancelledItems.every((it) => selected.has(it.id));
-  const someCancelledSel = cancelledItems.some((it) => selected.has(it.id));
-  const allOusuSel = outStockUnshippedItems.length > 0 && outStockUnshippedItems.every((it) => selected.has(it.id));
-  const someOusuSel = outStockUnshippedItems.some((it) => selected.has(it.id));
+  /* 일별입고/품절미송 전체선택 체크 */
+  const allArrivedSel  = filteredTodayArrivedItems.length > 0 && filteredTodayArrivedItems.every((it) => selected.has(it.id));
+  const someArrivedSel = filteredTodayArrivedItems.some((it) => selected.has(it.id));
+  const allOusuSel     = outStockUnshippedItems.length > 0 && outStockUnshippedItems.every((it) => selected.has(it.id));
+  const someOusuSel    = outStockUnshippedItems.some((it) => selected.has(it.id));
 
   return (
     <div className="pb-24">
@@ -1013,7 +1201,6 @@ export default function AdminOrdersPage() {
               {t}
               {t === '주문접수'  && pendingRows.length    > 0 && <span className="ml-1.5 text-xs bg-primary-600 text-white rounded-full px-1.5 py-0.5">{pendingRows.length}</span>}
               {t === '주문확인'  && confirmedRows.length  > 0 && <span className="ml-1.5 text-xs bg-green-600 text-white rounded-full px-1.5 py-0.5">{confirmedRows.length}</span>}
-              {t === '취소 상품' && cancelledItems.length > 0 && <span className="ml-1.5 text-xs bg-red-500 text-white rounded-full px-1.5 py-0.5">{cancelledItems.length}</span>}
               {t === '품절/미송' && outStockUnshippedItems.length > 0 && <span className="ml-1.5 text-xs bg-orange-500 text-white rounded-full px-1.5 py-0.5">{outStockUnshippedItems.length}</span>}
               {selCnt > 0 && <span className="ml-1 text-xs bg-yellow-400 text-slate-800 rounded-full px-1.5 py-0.5 font-bold">{selCnt}✓</span>}
             </button>
@@ -1121,9 +1308,28 @@ export default function AdminOrdersPage() {
               <div className="text-sm text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg inline-block">
                 오늘 ({new Date().toLocaleDateString('ko-KR')}) 입고 내역
               </div>
-              {todayArrivedItems.length > 0 && (
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <select className="input text-sm w-40" value={dailyIdFilter} onChange={(e) => setDailyIdFilter(e.target.value)}>
+                  <option value="">아이디 전체</option>
+                  {dailyIdOptions.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+                <select className="input text-sm w-40" value={dailyBrandFilter} onChange={(e) => setDailyBrandFilter(e.target.value)}>
+                  <option value="">브랜드 전체</option>
+                  {dailyBrandOptions.map((b) => <option key={b} value={b}>{b}</option>)}
+                </select>
+                {(dailyIdFilter || dailyBrandFilter) && (
+                  <button onClick={() => { setDailyIdFilter(''); setDailyBrandFilter(''); }} className="text-xs text-slate-500 hover:text-slate-700">초기화</button>
+                )}
+                <span className="text-xs text-slate-400">{filteredTodayInboundRows.length}건 표시 중</span>
+                <button onClick={handleDailyPrint} className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 text-white font-medium hover:bg-slate-800 transition-colors ml-auto">
+                  🖨 인쇄
+                </button>
+              </div>
+
+              {filteredTodayArrivedItems.length > 0 && (
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-700 mb-3">주문 상품 입고 ({todayArrivedItems.length}건)</h3>
+                  <h3 className="text-sm font-semibold text-slate-700 mb-3">주문 상품 입고 ({filteredTodayArrivedItems.length}건)</h3>
                   <div className="card overflow-hidden">
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm min-w-max">
@@ -1141,7 +1347,7 @@ export default function AdminOrdersPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
-                          {todayArrivedItems.map((it) => (
+                          {filteredTodayArrivedItems.map((it) => (
                             <tr key={it.id} className={`hover:bg-slate-50 transition-colors ${selected.has(it.id) ? 'bg-primary-50/40' : ''}`}>
                               <td className="px-3 py-3">
                                 <input type="checkbox" checked={selected.has(it.id)} onChange={() => toggleRow(it.id)} className="w-4 h-4 accent-primary-600" />
@@ -1155,7 +1361,10 @@ export default function AdminOrdersPage() {
                                   </span>
                                 )}
                               </td>
-                              <ProductCells product={it.product} brand={it.product.brand || '-'} size={it.size || '-'} color={it.color || '-'} quantity={it.quantity} price={it.price} />
+                              <ProductCells product={it.product} brand={it.product.brand || '-'} size={it.size || '-'} color={it.color || '-'} quantity={it.quantity} price={it.price}
+                                isOnSale={it.isOnSale} saleType={it.saleType} saleValue={it.saleValue}
+                                onBrandClick={(brand) => openBrandModal(brand, todayInboundRows)}
+                                onEditPrice={() => setEditModal({ source: 'order', id: it.id, title: `${it.product.name} (${it.size || '-'} / ${it.color || '-'})`, price: it.price })} />
                               <td className="px-3 py-3 text-xs text-slate-400 whitespace-nowrap">{formatDateTime(it.order.createdAt)}</td>
                               <td className="px-3 py-3 text-xs text-emerald-600 font-medium whitespace-nowrap">
                                 {new Date(it.arrivedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
@@ -1165,9 +1374,10 @@ export default function AdminOrdersPage() {
                         </tbody>
                         <tfoot className="border-t border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700">
                           <tr>
-                            <td colSpan={8} className="px-3 py-2">합계</td>
-                            <td className="px-3 py-2 text-center">{todayArrivedItems.reduce((s, r) => s + r.quantity, 0)}</td>
-                            <td colSpan={2} />
+                            <td colSpan={7} className="px-3 py-2">합계</td>
+                            <td className="px-3 py-2 text-center">{filteredTodayArrivedItems.reduce((s, r) => s + r.quantity, 0)}</td>
+                            <td />
+                            <td />
                             <td className="px-3 py-2 text-right text-primary-700">{formatPrice(arrivedTotal)}</td>
                             <td colSpan={3} />
                           </tr>
@@ -1179,7 +1389,9 @@ export default function AdminOrdersPage() {
               )}
               <div>
                 <h3 className="text-sm font-semibold text-slate-700 mb-3">공급업체 입고</h3>
-                <InboundSection inbounds={todayInbounds} onDelete={handleDeleteInbound} showForm />
+                <InboundSection inbounds={filteredTodayInbounds} onDelete={handleDeleteInbound} showForm
+                  onBrandClick={(brand) => openBrandModal(brand, todayInboundRows)}
+                  onEditPrice={(item) => setEditModal({ source: 'supplier', id: item.id, title: `${item.name} (${item.size || '-'} / ${item.color || '-'})`, price: item.price ?? 0 })} />
               </div>
             </div>
           )}
@@ -1204,45 +1416,72 @@ export default function AdminOrdersPage() {
                 const supplierRows = filteredInbounds.flatMap((ib) =>
                   ib.items.map((item) => ({
                     key: `s-${item.id}`,
+                    id: item.id,
                     source: 'supplier' as const,
                     userName: ib.user?.name ?? '-',
                     identifier: ib.note ? `${ib.brand} · ${ib.note}` : ib.brand,
                     brand: item.product?.brand || ib.brand,
                     image: item.product?.images?.[0] ?? null,
                     name: item.product?.name || item.name,
+                    productNumber: item.product?.productNumber ?? null,
+                    isOnSale: item.isOnSale,
+                    saleType: item.saleType,
+                    saleValue: item.saleValue,
                     size: item.size || '-',
                     color: item.color || '-',
                     quantity: item.quantity,
-                    price: null as number | null,
+                    price: item.price,
                     arrivedAt: ib.arrivedAt,
                   }))
                 );
                 const orderRows = filteredAllArrived.map((it) => ({
                   key: `o-${it.id}`,
+                  id: it.id,
                   source: 'order' as const,
                   userName: it.order.user.name,
                   identifier: `#${it.order.id.slice(-6).toUpperCase()}`,
                   brand: it.product.brand || '-',
                   image: it.product.images?.[0] ?? null,
                   name: it.product.name,
+                  productNumber: it.product.productNumber ?? null,
+                  isOnSale: it.isOnSale,
+                  saleType: it.saleType,
+                  saleValue: it.saleValue,
                   size: it.size || '-',
                   color: it.color || '-',
                   quantity: it.quantity,
                   price: it.price,
                   arrivedAt: it.arrivedAt,
                 }));
-                const allRows = [...orderRows, ...supplierRows].sort(
+                const allRowsRaw = [...orderRows, ...supplierRows].sort(
                   (a, b) => new Date(b.arrivedAt).getTime() - new Date(a.arrivedAt).getTime()
                 );
+                const inboundUserNames = Array.from(new Set(allRowsRaw.map((r) => r.userName))).sort();
+                const allRows = inboundIdFilter ? allRowsRaw.filter((r) => r.userName === inboundIdFilter) : allRowsRaw;
                 const totalQty = allRows.reduce((s, r) => s + r.quantity, 0);
                 const totalAmt = allRows.reduce((s, r) => s + (r.price ?? 0) * r.quantity, 0);
 
-                if (allRows.length === 0) return (
+                const handleInboundPrint = () => {
+                  if (allRows.length === 0) return;
+                  printInboundRows(allRows, `전체입고${inboundDateFilter ? ` - ${inboundDateFilter}` : ''}`);
+                };
+
+                if (allRowsRaw.length === 0) return (
                   <div className="text-center py-12 text-slate-400 text-sm">해당 날짜의 입고 내역이 없습니다.</div>
                 );
 
                 return (
                   <div className="card overflow-hidden">
+                    <div className="flex items-center gap-2 flex-wrap p-3 border-b border-slate-100 bg-slate-50">
+                      <select className="input text-sm w-40" value={inboundIdFilter} onChange={(e) => setInboundIdFilter(e.target.value)}>
+                        <option value="">아이디 전체</option>
+                        {inboundUserNames.map((n) => <option key={n} value={n}>{n}</option>)}
+                      </select>
+                      <span className="text-xs text-slate-400 ml-auto">{allRows.length}건 표시 중</span>
+                      <button onClick={handleInboundPrint} className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 text-white font-medium hover:bg-slate-800 transition-colors">
+                        🖨 인쇄
+                      </button>
+                    </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm min-w-max">
                         <thead className="bg-slate-50 border-b border-slate-100 text-xs text-slate-400 uppercase">
@@ -1255,8 +1494,10 @@ export default function AdminOrdersPage() {
                             <th className="px-3 py-3 text-left">사이즈</th>
                             <th className="px-3 py-3 text-left">색상</th>
                             <th className="px-3 py-3 text-center">수량</th>
+                            <th className="px-3 py-3 text-center">세일율</th>
                             <th className="px-3 py-3 text-right">금액</th>
                             <th className="px-3 py-3 text-left">입고시간</th>
+                            <th className="px-3 py-3 text-center">관리</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
@@ -1272,7 +1513,10 @@ export default function AdminOrdersPage() {
                                 <span className="block text-slate-400 font-mono">{row.identifier}</span>
                               </td>
                               <td className="px-3 py-3">
-                                <span className="text-xs font-semibold text-primary-600 bg-primary-50 px-2 py-0.5 rounded whitespace-nowrap">{row.brand}</span>
+                                <button onClick={() => openBrandModal(row.brand, allRowsRaw)}
+                                  className="text-xs font-semibold text-primary-600 bg-primary-50 px-2 py-0.5 rounded whitespace-nowrap hover:bg-primary-100 transition-colors">
+                                  {row.brand}
+                                </button>
                               </td>
                               <td className="px-3 py-3">
                                 <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-slate-100">
@@ -1281,15 +1525,28 @@ export default function AdminOrdersPage() {
                               </td>
                               <td className="px-3 py-3 font-medium text-slate-800 max-w-[160px]">
                                 <span className="block truncate">{row.name}</span>
+                                {row.productNumber && <span className="block text-xs text-slate-400 font-mono">{row.productNumber}</span>}
                               </td>
                               <td className="px-3 py-3 text-xs text-slate-500">{row.size}</td>
                               <td className="px-3 py-3 text-xs text-slate-500">{row.color}</td>
                               <td className="px-3 py-3 text-center font-semibold">{row.quantity}</td>
+                              <td className="px-3 py-3 text-center">
+                                {row.isOnSale
+                                  ? <span className="text-xs font-bold text-red-500 whitespace-nowrap">{row.saleType === 'RATE' ? `${row.saleValue}%` : row.saleValue ? `${row.saleValue.toLocaleString()}원` : ''}</span>
+                                  : <span className="text-slate-300 text-xs">-</span>}
+                              </td>
                               <td className="px-3 py-3 text-right font-semibold text-primary-700 whitespace-nowrap">
                                 {row.price !== null ? formatPrice(row.price * row.quantity) : <span className="text-slate-300">-</span>}
                               </td>
                               <td className="px-3 py-3 text-xs font-medium whitespace-nowrap" style={{ color: row.source === 'order' ? '#059669' : '#2563eb' }}>
                                 {new Date(row.arrivedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                              </td>
+                              <td className="px-3 py-3 text-center">
+                                <button
+                                  onClick={() => setEditModal({ source: row.source, id: row.id, title: `${row.name} (${row.size} / ${row.color})`, price: row.price ?? 0 })}
+                                  className="text-xs text-primary-600 hover:underline whitespace-nowrap">
+                                  수정
+                                </button>
                               </td>
                             </tr>
                           ))}
@@ -1298,8 +1555,9 @@ export default function AdminOrdersPage() {
                           <tr>
                             <td colSpan={7} className="px-3 py-2">합계 ({allRows.length}건)</td>
                             <td className="px-3 py-2 text-center">{totalQty}</td>
-                            <td className="px-3 py-2 text-right text-primary-700">{formatPrice(totalAmt)}</td>
                             <td />
+                            <td className="px-3 py-2 text-right text-primary-700">{formatPrice(totalAmt)}</td>
+                            <td colSpan={2} />
                           </tr>
                         </tfoot>
                       </table>
@@ -1328,7 +1586,7 @@ export default function AdminOrdersPage() {
                           </th>
                           <th className="px-3 py-3 text-left">구분</th>
                           <th className="px-3 py-3 text-left">아이디</th>
-                          <ProductHeaders hasEdit />
+                          <ProductHeaders />
                           <th className="px-3 py-3 text-left">주문일</th>
                           <th className="px-3 py-3 text-left">처리일시</th>
                           <th className="px-3 py-3 text-left">비고</th>
@@ -1356,7 +1614,8 @@ export default function AdminOrdersPage() {
                                   </span>
                                 )}
                               </td>
-                              <ProductCells product={it.product} brand={it.product.brand || '-'} size={it.size || '-'} color={it.color || '-'} quantity={it.quantity} price={it.price} />
+                              <ProductCells product={it.product} brand={it.product.brand || '-'} size={it.size || '-'} color={it.color || '-'} quantity={it.quantity} price={it.price}
+                                isOnSale={it.isOnSale} saleType={it.saleType} saleValue={it.saleValue} />
                               <td className="px-3 py-3 text-xs text-slate-400 whitespace-nowrap">{formatDateTime(it.order.createdAt)}</td>
                               <td className="px-3 py-3 text-xs whitespace-nowrap">
                                 {isOutOfStock
@@ -1399,7 +1658,7 @@ export default function AdminOrdersPage() {
                         <tr>
                           <td colSpan={9} className="px-3 py-2">합계</td>
                           <td className="px-3 py-2 text-center">{outStockUnshippedItems.reduce((s, r) => s + r.quantity, 0)}</td>
-                          <td colSpan={4} />
+                          <td colSpan={5} />
                         </tr>
                       </tfoot>
                     </table>
@@ -1409,64 +1668,6 @@ export default function AdminOrdersPage() {
             </div>
           )}
 
-          {/* ── 취소 상품 ── */}
-          {tab === '취소 상품' && (
-            <div>
-              {cancelledItems.length === 0 ? (
-                <div className="text-center py-12 text-slate-400">취소된 상품이 없습니다.</div>
-              ) : (
-                <div className="card overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm min-w-max">
-                      <thead className="bg-slate-50 border-b border-slate-100 text-xs text-slate-400 uppercase">
-                        <tr>
-                          <th className="px-3 py-3">
-                            <input type="checkbox" checked={allCancelledSel}
-                              ref={(el) => { if (el) el.indeterminate = someCancelledSel && !allCancelledSel; }}
-                              onChange={toggleAllCancelled} className="w-4 h-4 accent-primary-600" />
-                          </th>
-                          <th className="px-3 py-3 text-left">아이디</th>
-                          <ProductHeaders hasEdit />
-                          <th className="px-3 py-3 text-left">주문일</th>
-                          <th className="px-3 py-3 text-left">취소일시</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-50">
-                        {cancelledItems.map((it) => (
-                          <tr key={it.id} className={`opacity-80 hover:bg-red-50/30 transition-colors ${selected.has(it.id) ? 'bg-primary-50/40 opacity-100' : ''}`}>
-                            <td className="px-3 py-3">
-                              <input type="checkbox" checked={selected.has(it.id)} onChange={() => toggleRow(it.id)} className="w-4 h-4 accent-primary-600" />
-                            </td>
-                            <td className="px-3 py-3 text-xs text-slate-600 whitespace-nowrap">
-                              {it.order.user.name}
-                              <span className="block text-slate-400 font-mono">#{it.order.id.slice(-6).toUpperCase()}</span>
-                              {it.order.note && (
-                                <span className="block mt-0.5 text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[10px] leading-tight max-w-[120px] break-words whitespace-normal">
-                                  {it.order.note}
-                                </span>
-                              )}
-                            </td>
-                            <ProductCells product={it.product} brand={it.product.brand || '-'} size={it.size || '-'} color={it.color || '-'} quantity={it.quantity} price={it.price} />
-                            <td className="px-3 py-3 text-xs text-slate-400 whitespace-nowrap">{formatDateTime(it.order.createdAt)}</td>
-                            <td className="px-3 py-3 text-xs text-red-400 whitespace-nowrap">{formatDateTime(it.cancelledAt)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot className="border-t border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700">
-                        <tr>
-                          <td colSpan={8} className="px-3 py-2">합계</td>
-                          <td className="px-3 py-2 text-center">{cancelledItems.reduce((s, r) => s + r.quantity, 0)}</td>
-                          <td colSpan={2} />
-                          <td className="px-3 py-2 text-right text-slate-400 line-through">{formatPrice(cancelledTotal)}</td>
-                          <td colSpan={3} />
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
         </>
       )}
 
@@ -1479,7 +1680,6 @@ export default function AdminOrdersPage() {
               selPending.length   > 0 && `접수 ${selPending.length}건`,
               selConfirmed.length > 0 && `확인 ${selConfirmed.length}건`,
               selArrived.length   > 0 && `입고 ${selArrived.length}건`,
-              selCancelled.length > 0 && `취소 ${selCancelled.length}건`,
               selOusu.length      > 0 && `품절/미송 ${selOusu.length}건`,
             ].filter(Boolean).join(' · ')}
           </span>
@@ -1557,6 +1757,26 @@ export default function AdminOrdersPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── 입고 상품 금액 단건 수정 모달 ── */}
+      {editModal && (
+        <EditPriceModal
+          title={editModal.title}
+          initialPrice={editModal.price}
+          onSave={handleSaveSinglePrice}
+          onClose={() => setEditModal(null)}
+        />
+      )}
+
+      {/* ── 브랜드별 입고 상품 금액 일괄 수정 모달 ── */}
+      {brandModal && (
+        <BrandPriceModal
+          brand={brandModal.brand}
+          rows={brandModal.rows}
+          onSave={handleSaveBrandChanges}
+          onClose={() => setBrandModal(null)}
+        />
       )}
     </div>
   );

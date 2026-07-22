@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { hasAdminAccess } from '@/lib/adminAccess';
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const isAdmin = (session.user as any)?.role === 'ADMIN';
+  const isAdmin = hasAdminAccess((session.user as any)?.role);
   const userId = isAdmin ? (new URL(req.url).searchParams.get('userId') || undefined) : (session.user as any).id;
 
   const list = await prisma.shipping.findMany({
@@ -19,7 +20,8 @@ export async function GET(req: NextRequest) {
           items: {
             select: {
               id: true, quantity: true, price: true, size: true, color: true, arrivedAt: true,
-              product: { select: { name: true, brand: true, images: true } },
+              isOnSale: true, saleType: true, saleValue: true,
+              product: { select: { name: true, brand: true, images: true, productNumber: true } },
             },
           },
         },
@@ -33,7 +35,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || (session.user as any)?.role !== 'ADMIN') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!session || !hasAdminAccess((session.user as any)?.role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { orderId, trackingNumber, carrier, note, shippedAt } = await req.json();
   if (!orderId) return NextResponse.json({ error: 'orderId 필요' }, { status: 400 });

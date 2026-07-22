@@ -50,6 +50,11 @@ export const authOptions: NextAuthOptions = {
           token.role = dbUser.role;
           token.dealerGrade = dbUser.dealerGrade;
           if (!dbUser.isActive) token.isInactive = true;
+        } else {
+          // 유저가 DB에서 삭제됐거나 DB가 초기화된 경우 — 토큰 무효화
+          token.id = undefined;
+          token.role = undefined;
+          token.dealerGrade = undefined;
         }
       }
       return token;

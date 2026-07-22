@@ -157,12 +157,11 @@ export default function AdminShippingPage() {
 
   /* ─ 데이터 로드 ─ */
   const loadData = async () => {
-    const [arrived, ships, inbounds, policy] = await Promise.all([
-      fetch('/api/orders/items?allArrived=1').then((r) => r.json()).catch(() => []),
-      fetch('/api/shipping').then((r) => r.json()).catch(() => []),
-      fetch('/api/inbound').then((r) => r.json()).catch(() => []),
-      fetch('/api/delivery-policy').then((r) => r.json()).catch(() => null),
-    ]);
+    const d = await fetch('/api/admin/shipping-data').then((r) => r.json()).catch(() => ({}));
+    const arrived  = d.allArrivedItems ?? [];
+    const ships    = d.shippings ?? [];
+    const inbounds = d.inbounds ?? [];
+    const policy   = d.deliveryPolicy;
 
     const pol: DeliveryPolicy = (policy && !policy.error)
       ? policy

@@ -8,6 +8,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { getProductPrices } from '@/app/actions/prices';
+import { resolveColorImage } from '@/lib/productImages';
 
 function itemKey(productId: string, size: string, color: string) {
   return `${productId}::${size}::${color}`;
@@ -23,7 +24,7 @@ export default function CartPage() {
   const [loading, setLoading] = useState(false);
 
   // 실시간 등급+세일 가격 (API에서 재조회)
-  type LiveInfo = { price: number; gradePrice: number; isOnSale: boolean; saleType: string | null; saleValue: number | null; images: string[]; colors: string[]; brand: string; sizeExtraPrices: Record<string, number> };
+  type LiveInfo = { price: number; gradePrice: number; isOnSale: boolean; saleType: string | null; saleValue: number | null; images: string[]; colors: string[]; colorImages: { color: string; imageUrl: string }[]; brand: string; sizeExtraPrices: Record<string, number> };
   const [liveInfo, setLiveInfo] = useState<Record<string, LiveInfo> | null>(null);
   const [pricesLoading, setPricesLoading] = useState(true);
 
@@ -63,6 +64,7 @@ export default function CartPage() {
           saleValue:       p.saleValue,
           images:          p.images,
           colors:          p.colors,
+          colorImages:     p.colorImages,
           brand:           p.brand,
           sizeExtraPrices: p.sizeExtraPrices ?? {},
         };
@@ -217,9 +219,8 @@ export default function CartPage() {
                 <div className="relative w-20 h-20 rounded-lg overflow-hidden bg-primary-50 flex-shrink-0">
                   {(() => {
                     const productInfo = liveInfo?.[item.product.id];
-                    const colorIdx = productInfo?.colors ? productInfo.colors.indexOf(item.color) : -1;
-                    const imgSrc = (colorIdx >= 0 && productInfo?.images?.[colorIdx])
-                      ? productInfo.images[colorIdx]
+                    const imgSrc = productInfo
+                      ? resolveColorImage(item.color, productInfo.colorImages, productInfo.images, item.product.image || 'https://placehold.co/80x80/EFF6FF/2563EB?text=상품')
                       : (item.product.image || 'https://placehold.co/80x80/EFF6FF/2563EB?text=상품');
                     return (
                       <Image

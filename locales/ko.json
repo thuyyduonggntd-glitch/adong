@@ -122,6 +122,7 @@
   "product.brandSizeInfo": "브랜드 사이즈 정보",
   "product.brandModelInfo": "브랜드 모델 정보",
   "product.detailSizeTitle": "상세 사이즈 / 상품 상세",
+  "product.productImagesTitle": "상품 이미지",
   "cart.title": "장바구니",
   "cart.priceChecking": "가격 확인 중...",
   "cart.selectAll": "전체 선택 ({{selected}}/{{total}})",

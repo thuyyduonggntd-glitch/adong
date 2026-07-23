@@ -122,6 +122,7 @@
   "product.brandSizeInfo": "Брэндийн хэмжээний мэдээлэл",
   "product.brandModelInfo": "Брэндийн загварын мэдээлэл",
   "product.detailSizeTitle": "Дэлгэрэнгүй хэмжээ / Бүтээгдэхүүний дэлгэрэнгүй",
+  "product.productImagesTitle": "Бүтээгдэхүүний зураг",
   "cart.title": "Сагс",
   "cart.priceChecking": "Үнийг шалгаж байна...",
   "cart.selectAll": "Бүгдийг сонгох ({{selected}}/{{total}})",

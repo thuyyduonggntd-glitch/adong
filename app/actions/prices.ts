@@ -12,7 +12,7 @@ export async function getProductPrices(productIds: string[]) {
 
   const products = await prisma.product.findMany({
     where:   { id: { in: productIds } },
-    include: { prices: true },
+    include: { prices: true, colorImages: { select: { color: true, imageUrl: true } } },
   });
 
   return products.map((product) => {
@@ -28,6 +28,7 @@ export async function getProductPrices(productIds: string[]) {
       saleValue:       product.saleValue ?? null,
       images:          product.images,
       colors:          product.colors,
+      colorImages:     product.colorImages,
       brand:           product.brand     ?? '',
       sizeExtraPrices: (product.sizeExtraPrices as Record<string, number>) ?? {},
     };

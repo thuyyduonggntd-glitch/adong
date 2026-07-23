@@ -4,6 +4,8 @@ import Link from 'next/link';
 
 /* ───── Types ───── */
 type LocalImage = { blobUrl: string; blob: Blob; filename: string; colorName: string };
+type SizeQty = { size: string; stock: number };
+type ColorRow = { color: string; sizeQty: SizeQty[] };
 
 type ParsedProduct = {
   productNumber: string;
@@ -12,6 +14,7 @@ type ParsedProduct = {
   categoryGroup: string;
   categoryName: string;
   sizeCategoryName: string;
+  colorRows: ColorRow[];
   colors: string[];
   sizes: string[];
   price: number;
@@ -25,6 +28,7 @@ type ParsedProduct = {
   description: string;
   remark: string;
   localImages: LocalImage[];
+  colorImages: { color: string; localImage: LocalImage }[];
   imageCount: number;
   isDuplicate: boolean;
   existingId?: string;
@@ -38,19 +42,29 @@ type Results  = { created: number; updated: number; skipped: number; errors: str
 /* ───── Excel template download ───── */
 async function downloadTemplate() {
   const XLSX = await import('xlsx');
-  const headers = ['상품코드','상품명','브랜드','카테고리 분류','카테고리','카테고리 사이즈','색상(쉼표구분)','사이즈(쉼표구분)',
+  const headers = ['상품코드','상품명','브랜드','카테고리 분류','카테고리','카테고리 사이즈','색상','사이즈:수량',
                    '일반가','SILVER가','GOLD가','VIP가','세일률(%)','세일가','시즌','재질','성별','종류','설명','비고'];
-  const sample  = ['A001','상품명예시','브랜드명','의류','아동복','키즈','레드,블루','S,M,L',
+  const sample1 = ['A001','상품명예시','브랜드명','의류','아동복','키즈','레드','S:10,M:20,L:5',
                    '10000','9500','9000','8500','10','9000','여름1차','면','공용','티셔츠','색상 주의',''];
-  const ws = XLSX.utils.aoa_to_sheet([headers, sample]);
+  const sample2 = ['A001','','','','','','블루','S:5,M:10',
+                   '','','','','','','','','','','',''];
+  const ws = XLSX.utils.aoa_to_sheet([headers, sample1, sample2]);
   ws['!cols'] = headers.map(() => ({ wch: 16 }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '상품목록');
   XLSX.writeFile(wb, '상품일괄등록_템플릿.xlsx');
 }
 
+/* "S:10,M:20,L:5" → [{size:'S',stock:10}, {size:'M',stock:20}, {size:'L',stock:5}] */
+function parseSizeQty(cell: string): SizeQty[] {
+  return cell.split(',').map(s => s.trim()).filter(Boolean).map(pair => {
+    const [size, qty] = pair.split(':').map(s => s.trim());
+    return { size, stock: Number(qty || 0) };
+  }).filter(sq => sq.size);
+}
+
 /* ───── Excel parser ───── */
-async function parseExcel(file: File): Promise<Omit<ParsedProduct, 'localImages'|'imageCount'|'isDuplicate'|'existingId'|'action'>[]> {
+async function parseExcel(file: File): Promise<Omit<ParsedProduct, 'localImages'|'colorImages'|'imageCount'|'isDuplicate'|'existingId'|'action'>[]> {
   const XLSX = await import('xlsx');
   const buf  = await file.arrayBuffer();
   const wb   = XLSX.read(buf, { type: 'array' });
@@ -61,7 +75,7 @@ async function parseExcel(file: File): Promise<Omit<ParsedProduct, 'localImages'
   const header = rows[0].map((h: any) => String(h ?? '').trim());
   const col = (name: string) => header.indexOf(name);
 
-  return rows.slice(1)
+  const rawRows = rows.slice(1)
     .filter(row => row.some(c => c !== undefined && c !== ''))
     .map(row => {
       const g = (name: string) => String(row[col(name)] ?? '').trim();
@@ -72,8 +86,8 @@ async function parseExcel(file: File): Promise<Omit<ParsedProduct, 'localImages'
         categoryGroup: g('카테고리 분류'),
         categoryName:  g('카테고리'),
         sizeCategoryName: g('카테고리 사이즈'),
-        colors:        g('색상(쉼표구분)').split(',').map(s => s.trim()).filter(Boolean),
-        sizes:         g('사이즈(쉼표구분)').split(',').map(s => s.trim()).filter(Boolean),
+        color:         g('색상'),
+        sizeQty:       parseSizeQty(g('사이즈:수량')),
         price:         Number(row[col('일반가')] || 0),
         prices:        [
           { grade: 'REGULAR', price: Number(row[col('일반가')]   || 0) },
@@ -92,6 +106,41 @@ async function parseExcel(file: File): Promise<Omit<ParsedProduct, 'localImages'
       };
     })
     .filter(p => p.productNumber);
+
+  // 같은 상품코드가 여러 행에 걸쳐 나오면 한 상품 — 행마다 색상 하나 + 그 색상의 사이즈:수량
+  const order: string[] = [];
+  const groups = new Map<string, typeof rawRows>();
+  for (const row of rawRows) {
+    if (!groups.has(row.productNumber)) { groups.set(row.productNumber, []); order.push(row.productNumber); }
+    groups.get(row.productNumber)!.push(row);
+  }
+
+  return order.map(productNumber => {
+    const groupRows = groups.get(productNumber)!;
+    const first = groupRows[0];
+    const colorRows: ColorRow[] = groupRows.filter(r => r.color).map(r => ({ color: r.color, sizeQty: r.sizeQty }));
+    return {
+      productNumber,
+      name:             first.name,
+      brand:            first.brand,
+      categoryGroup:    first.categoryGroup,
+      categoryName:     first.categoryName,
+      sizeCategoryName: first.sizeCategoryName,
+      colorRows,
+      colors:           colorRows.map(cr => cr.color),
+      sizes:            Array.from(new Set(colorRows.flatMap(cr => cr.sizeQty.map(sq => sq.size)))),
+      price:            first.price,
+      prices:           first.prices,
+      saleRate:         first.saleRate,
+      salePrice:        first.salePrice,
+      season:           first.season,
+      material:         first.material,
+      gender:           first.gender,
+      productType:      first.productType,
+      description:      first.description,
+      remark:           first.remark,
+    };
+  });
 }
 
 /* ───── ZIP parser ───── */
@@ -131,11 +180,13 @@ async function parseZip(file: File): Promise<Map<string, LocalImage[]>> {
   return result;
 }
 
-/* ───── Attach images to products ───── */
+/* ───── Attach images to products ─────
+   색상 폴더의 첫 이미지는 그 색상의 대표이미지(colorImages)로 분리하고,
+   나머지(상세컷)와 색상 폴더 없이 루트에 있는 파일은 일반 상품이미지(localImages)로 모은다. */
 function attachImages(products: ParsedProduct[], imageMap: Map<string, LocalImage[]>): ParsedProduct[] {
   return products.map(p => {
     const imgs = imageMap.get(p.productNumber) || [];
-    if (!imgs.length) return { ...p, localImages: [], imageCount: 0 };
+    if (!imgs.length) return { ...p, localImages: [], colorImages: [], imageCount: 0 };
 
     const byColor = new Map<string, LocalImage[]>();
     imgs.forEach(img => {
@@ -144,20 +195,20 @@ function attachImages(products: ParsedProduct[], imageMap: Map<string, LocalImag
       byColor.get(key)!.push(img);
     });
 
-    const ordered: LocalImage[] = [];
+    const colorImages: { color: string; localImage: LocalImage }[] = [];
     const used = new Set<string>();
 
-    const colorKeys = p.colors.length > 0 ? p.colors : Array.from(byColor.keys());
-    colorKeys.forEach(c => {
-      const group = byColor.get(c) || byColor.get('__all__') || [];
-      if (group.length > 0 && !used.has(group[0].blobUrl)) {
-        ordered.push(group[0]);
+    p.colors.forEach(c => {
+      const group = byColor.get(c);
+      if (group && group.length > 0 && !used.has(group[0].blobUrl)) {
+        colorImages.push({ color: c, localImage: group[0] });
         used.add(group[0].blobUrl);
       }
     });
-    imgs.forEach(img => { if (!used.has(img.blobUrl)) { ordered.push(img); used.add(img.blobUrl); } });
 
-    return { ...p, localImages: ordered, imageCount: ordered.length };
+    const localImages = imgs.filter(img => !used.has(img.blobUrl));
+
+    return { ...p, localImages, colorImages, imageCount: localImages.length };
   });
 }
 
@@ -200,7 +251,7 @@ export default function BulkImportPage() {
     try {
       const raw = await parseExcel(excelFile);
       let parsed: ParsedProduct[] = raw.map(p => ({
-        ...p, localImages: [], imageCount: 0, isDuplicate: false, action: 'create',
+        ...p, localImages: [], colorImages: [], imageCount: 0, isDuplicate: false, action: 'create',
       }));
 
       if (zipFile) {
@@ -236,13 +287,18 @@ export default function BulkImportPage() {
     setStep('importing');
     const toImport = products.filter(p => p.action !== 'skip');
 
-    /* Phase 1: upload images */
+    /* Phase 1: upload images (일반 상품이미지 + 색상별 대표이미지) */
     const blobMap = new Map<string, string>();
     const allImgs: LocalImage[] = [];
     const seen = new Set<string>();
-    toImport.forEach(p => p.localImages.forEach(img => {
-      if (!seen.has(img.blobUrl)) { seen.add(img.blobUrl); allImgs.push(img); }
-    }));
+    toImport.forEach(p => {
+      p.localImages.forEach(img => {
+        if (!seen.has(img.blobUrl)) { seen.add(img.blobUrl); allImgs.push(img); }
+      });
+      p.colorImages.forEach(({ localImage }) => {
+        if (!seen.has(localImage.blobUrl)) { seen.add(localImage.blobUrl); allImgs.push(localImage); }
+      });
+    });
 
     setProgress({ phase: '이미지 업로드 중', pct: 0, current: 0, total: allImgs.length });
     const IMG_BATCH = 20;
@@ -266,6 +322,9 @@ export default function BulkImportPage() {
       const batch = toImport.slice(i, i + PROD_BATCH).map(p => ({
         ...p,
         images: p.localImages.map(img => blobMap.get(img.blobUrl) || '').filter(Boolean),
+        colorImages: p.colorImages
+          .map(({ color, localImage }) => ({ color, imageUrl: blobMap.get(localImage.blobUrl) || '' }))
+          .filter(c => c.imageUrl),
         localImages: undefined,
       }));
       const res = await fetch('/api/products/bulk', {
@@ -435,8 +494,7 @@ export default function BulkImportPage() {
                 <th className="px-3 py-2.5 text-left w-20">카테고리 분류</th>
                 <th className="px-3 py-2.5 text-left w-24">카테고리</th>
                 <th className="px-3 py-2.5 text-left w-24">카테고리 사이즈</th>
-                <th className="px-3 py-2.5 text-left w-36">색상</th>
-                <th className="px-3 py-2.5 text-left w-36">사이즈</th>
+                <th className="px-3 py-2.5 text-left w-56">색상별 사이즈:수량</th>
                 <th className="px-3 py-2.5 text-right w-24">일반가</th>
                 <th className="px-3 py-2.5 text-right w-20">세일률(%)</th>
                 <th className="px-3 py-2.5 text-right w-24">세일가</th>
@@ -465,12 +523,12 @@ export default function BulkImportPage() {
                     {/* 이미지 */}
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-1">
-                        {p.localImages[0] ? (
-                          <img src={p.localImages[0].blobUrl} alt="" className="w-8 h-8 object-cover rounded border border-slate-200" />
+                        {(p.colorImages[0]?.localImage ?? p.localImages[0]) ? (
+                          <img src={(p.colorImages[0]?.localImage ?? p.localImages[0]).blobUrl} alt="" className="w-8 h-8 object-cover rounded border border-slate-200" />
                         ) : (
                           <div className="w-8 h-8 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-slate-300 text-xs">없음</div>
                         )}
-                        {p.imageCount > 1 && <span className="text-slate-400">+{p.imageCount - 1}</span>}
+                        {(p.colorImages.length + p.imageCount) > 1 && <span className="text-slate-400">+{p.colorImages.length + p.imageCount - 1}</span>}
                       </div>
                     </td>
                     {/* 상품코드 */}
@@ -517,16 +575,15 @@ export default function BulkImportPage() {
                         onChange={e => updateProduct(absIdx, 'sizeCategoryName', e.target.value)}
                       />
                     </td>
-                    {/* 색상 */}
+                    {/* 색상별 사이즈:수량 */}
                     <td className="px-3 py-2">
-                      <div className="flex flex-wrap gap-0.5">
-                        {p.colors.map(c => <span key={c} className="badge bg-slate-100 text-slate-600 text-xs py-0">{c}</span>)}
-                      </div>
-                    </td>
-                    {/* 사이즈 */}
-                    <td className="px-3 py-2">
-                      <div className="flex flex-wrap gap-0.5">
-                        {p.sizes.map(s => <span key={s} className="badge bg-primary-50 text-primary-700 text-xs py-0">{s}</span>)}
+                      <div className="flex flex-col gap-0.5">
+                        {p.colorRows.map(cr => (
+                          <span key={cr.color} className="text-slate-600">
+                            <span className="font-semibold">{cr.color}</span>
+                            {' '}({cr.sizeQty.map(sq => `${sq.size}:${sq.stock}`).join(', ')})
+                          </span>
+                        ))}
                       </div>
                     </td>
                     {/* 가격 (editable) */}

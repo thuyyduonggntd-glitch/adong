@@ -122,6 +122,7 @@
   "product.brandSizeInfo": "Thông tin size thương hiệu",
   "product.brandModelInfo": "Thông tin mẫu thương hiệu",
   "product.detailSizeTitle": "Chi tiết size / Chi tiết sản phẩm",
+  "product.productImagesTitle": "Hình ảnh sản phẩm",
   "cart.title": "Giỏ hàng",
   "cart.priceChecking": "Đang kiểm tra giá...",
   "cart.selectAll": "Chọn tất cả ({{selected}}/{{total}})",

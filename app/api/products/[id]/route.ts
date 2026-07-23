@@ -21,6 +21,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       sizeCategory: true,
       prices: true,
       variants: true,
+      colorImages: true,
       reviews: { include: { user: { select: { name: true } } }, orderBy: { createdAt: 'desc' }, take: 20 },
     },
   });
@@ -42,7 +43,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const d = await req.json();
-  const { prices: gradePrice, variants, ...rest } = d;
+  const { prices: gradePrice, variants, colorImages, ...rest } = d;
 
   const regularPrice = Array.isArray(gradePrice)
     ? gradePrice.find((p: any) => p.grade === 'REGULAR')?.price
@@ -94,11 +95,25 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
   }
 
+  // 색상별 대표이미지 upsert
+  if (Array.isArray(colorImages)) {
+    await prisma.productColorImage.deleteMany({ where: { productId: params.id } });
+    if (colorImages.length > 0) {
+      await prisma.productColorImage.createMany({
+        data: colorImages.map((c: any) => ({
+          productId: params.id,
+          color:     c.color,
+          imageUrl:  c.imageUrl,
+        })),
+      });
+    }
+  }
+
   try {
     const product = await prisma.product.update({
       where: { id: params.id },
       data:  updateData,
-      include: { prices: true, variants: true },
+      include: { prices: true, variants: true, colorImages: true },
     });
 
     const displayName = product.brand?.trim() || product.name;

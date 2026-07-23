@@ -122,6 +122,7 @@
   "product.brandSizeInfo": "Информация о размерах бренда",
   "product.brandModelInfo": "Информация о моделях бренда",
   "product.detailSizeTitle": "Подробные размеры / детали товара",
+  "product.productImagesTitle": "Изображения товара",
   "cart.title": "Корзина",
   "cart.priceChecking": "Проверка цены...",
   "cart.selectAll": "Выбрать все ({{selected}}/{{total}})",

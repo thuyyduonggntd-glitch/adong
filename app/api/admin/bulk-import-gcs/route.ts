@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { hasAdminAccess } from '@/lib/adminAccess';
-import { downloadFromGCS, listProductImageUrls } from '@/lib/gcs';
+import { downloadFromGCS, listProductImageUrls, listProductColorImageUrls } from '@/lib/gcs';
 import { CATEGORY_GROUPS } from '@/lib/categoryGroups';
 import { translateAndSaveCategory } from '@/lib/translate';
 
@@ -16,14 +16,25 @@ const GROUP_KEY_BY_LABEL: Record<string, 'clothing' | 'item'> = { '의류': 'clo
 const SIZE_CATEGORY_SLUGS = CATEGORY_GROUPS.find((g) => g.key === 'size')!.slugs as readonly string[];
 const BATCH_SIZE = 500;
 
+type SizeQty = { size: string; stock: number };
+type ColorRow = { color: string; sizeQty: SizeQty[] };
+
 type ParsedRow = {
   productNumber: string; name: string; brand: string;
   categoryGroup: string; categoryName: string; sizeCategoryName: string;
-  colors: string[]; sizes: string[];
+  colorRows: ColorRow[]; colors: string[]; sizes: string[];
   priceRegular: number; priceSilver: number; priceGold: number; priceVip: number;
   season: string; material: string; gender: string; productType: string;
   description: string; remark: string;
 };
+
+/** "S:10,M:20,L:5" → [{size:'S',stock:10}, {size:'M',stock:20}, {size:'L',stock:5}] */
+function parseSizeQty(cell: string): SizeQty[] {
+  return cell.split(',').map((s) => s.trim()).filter(Boolean).map((pair) => {
+    const [size, qty] = pair.split(':').map((s) => s.trim());
+    return { size, stock: Number(qty || 0) };
+  }).filter((sq) => sq.size);
+}
 
 function parseExcel(buf: Buffer): ParsedRow[] {
   const wb = XLSX.read(buf, { type: 'buffer' });
@@ -34,7 +45,7 @@ function parseExcel(buf: Buffer): ParsedRow[] {
   const header = rows[0].map((h: any) => String(h ?? '').trim());
   const col = (name: string) => header.indexOf(name);
 
-  return rows.slice(1)
+  const rawRows = rows.slice(1)
     .filter((row) => row.some((c) => c !== undefined && c !== ''))
     .map((row) => {
       const g = (name: string) => String(row[col(name)] ?? '').trim();
@@ -45,8 +56,8 @@ function parseExcel(buf: Buffer): ParsedRow[] {
         categoryGroup: g('카테고리 분류'),
         categoryName: g('카테고리'),
         sizeCategoryName: g('카테고리 사이즈'),
-        colors: g('색상(쉼표구분)').split(',').map((s) => s.trim()).filter(Boolean),
-        sizes: g('사이즈(쉼표구분)').split(',').map((s) => s.trim()).filter(Boolean),
+        color: g('색상'),
+        sizeQty: parseSizeQty(g('사이즈:수량')),
         priceRegular: Number(row[col('일반가')] || 0),
         priceSilver: Number(row[col('SILVER가')] || 0),
         priceGold: Number(row[col('GOLD가')] || 0),
@@ -60,6 +71,43 @@ function parseExcel(buf: Buffer): ParsedRow[] {
       };
     })
     .filter((p) => p.productNumber);
+
+  // 같은 상품코드가 여러 행에 걸쳐 나오면 한 상품 — 행마다 색상 하나 + 그 색상의 사이즈:수량
+  const order: string[] = [];
+  const groups = new Map<string, typeof rawRows>();
+  for (const row of rawRows) {
+    if (!groups.has(row.productNumber)) { groups.set(row.productNumber, []); order.push(row.productNumber); }
+    groups.get(row.productNumber)!.push(row);
+  }
+
+  return order.map((productNumber) => {
+    const groupRows = groups.get(productNumber)!;
+    const first = groupRows[0];
+    const colorRows: ColorRow[] = groupRows
+      .filter((r) => r.color)
+      .map((r) => ({ color: r.color, sizeQty: r.sizeQty }));
+    return {
+      productNumber,
+      name: first.name,
+      brand: first.brand,
+      categoryGroup: first.categoryGroup,
+      categoryName: first.categoryName,
+      sizeCategoryName: first.sizeCategoryName,
+      colorRows,
+      colors: colorRows.map((cr) => cr.color),
+      sizes: Array.from(new Set(colorRows.flatMap((cr) => cr.sizeQty.map((sq) => sq.size)))),
+      priceRegular: first.priceRegular,
+      priceSilver: first.priceSilver,
+      priceGold: first.priceGold,
+      priceVip: first.priceVip,
+      season: first.season,
+      material: first.material,
+      gender: first.gender,
+      productType: first.productType,
+      description: first.description,
+      remark: first.remark,
+    };
+  });
 }
 
 async function resolveCategory(p: ParsedRow) {
@@ -122,20 +170,23 @@ export async function POST() {
 
     for (const p of batch) {
       try {
-        // 1) GCS에서 이미 업로드된 이미지 목록 조회 (순번 순서 그대로 = 색상 대표 먼저, 상세 나중)
+        // 1) GCS에서 이미 업로드된 이미지 목록 조회 — 일반 상품이미지(products/{code}_{n}.ext)와
+        //    색상별 대표이미지(products/{code}_color_{색상명}.ext)를 각각 조회한다.
         const images = await listProductImageUrls(p.productNumber);
+        const colorImagesRaw = await listProductColorImageUrls(p.productNumber);
+        const colorImageList = colorImagesRaw.filter((ci) => p.colors.includes(ci.color));
 
-        // 이미지가 0개면 완전히 스킵
-        if (images.length === 0) {
+        // 이미지가 하나도 없으면(일반+색상 모두) 완전히 스킵
+        if (images.length === 0 && colorImageList.length === 0) {
           const reason = `[${p.productNumber}] 이미지 없음 - 스킵`;
           console.warn(`[bulk-import-gcs] ${reason}`);
           skipReasons.push(reason);
           skipped++;
           continue;
         }
-        // 이미지가 색상 개수보다 적으면 경고만 남기고 있는 이미지로 진행
-        if (images.length < p.colors.length) {
-          console.warn(`[bulk-import-gcs] [${p.productNumber}] 경고 - 이미지 부족: 색상 ${p.colors.length}개, 이미지 ${images.length}개 (있는 이미지로 진행)`);
+        // 색상 대표이미지가 색상 개수보다 적으면 경고만 남기고 있는 이미지로 진행
+        if (colorImageList.length < p.colors.length) {
+          console.warn(`[bulk-import-gcs] [${p.productNumber}] 경고 - 색상 대표이미지 부족: 색상 ${p.colors.length}개, 이미지 ${colorImageList.length}개 (있는 이미지로 진행)`);
         }
 
         // 2) 브랜드 매칭 (자동 생성 안 함)
@@ -178,25 +229,34 @@ export async function POST() {
           remark: p.remark || null,
         };
 
-        // 5) productNumber 기준 중복 방지 (upsert 대신 조회 후 분기 — productNumber에 unique 제약이 없음)
+        // 5) 색상별 사이즈:수량 → variant 목록 (색상마다 사이즈 구성/수량이 달라도 그대로 반영됨)
+        const variantList = p.colorRows.flatMap((cr) =>
+          cr.sizeQty.map((sq) => ({ color: cr.color, size: sq.size, stock: sq.stock }))
+        );
+
+        // 6) productNumber 기준 중복 방지 (upsert 대신 조회 후 분기 — productNumber에 unique 제약이 없음)
         const existing = await prisma.product.findFirst({ where: { productNumber: p.productNumber } });
 
         if (existing) {
+          // 재업로드 시 재고/색상이미지는 시트 내용으로 전체 덮어쓴다 (시트에 없는 기존 조합은 삭제됨)
           await prisma.product.update({
             where: { id: existing.id },
-            data: { ...data, prices: { deleteMany: {}, create: gradePrices } },
+            data: {
+              ...data,
+              prices: { deleteMany: {}, create: gradePrices },
+              variants: { deleteMany: {}, create: variantList },
+              colorImages: { deleteMany: {}, create: colorImageList },
+            },
           });
           updated++;
         } else {
-          const variantList = (p.colors.length > 0 && p.sizes.length > 0)
-            ? p.colors.flatMap((color) => p.sizes.map((size) => ({ color, size, stock: 500 })))
-            : [];
           await prisma.product.create({
             data: {
               ...data,
               stock: 0,
               prices: gradePrices.length > 0 ? { create: gradePrices } : undefined,
               variants: variantList.length > 0 ? { create: variantList } : undefined,
+              colorImages: colorImageList.length > 0 ? { create: colorImageList } : undefined,
             },
           });
           created++;

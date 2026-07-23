@@ -122,6 +122,7 @@
   "product.brandSizeInfo": "Brand Size Info",
   "product.brandModelInfo": "Brand Model Info",
   "product.detailSizeTitle": "Detailed Size / Product Detail",
+  "product.productImagesTitle": "Product Images",
   "cart.title": "Cart",
   "cart.priceChecking": "Checking price...",
   "cart.selectAll": "Select All ({{selected}}/{{total}})",

@@ -46,9 +46,8 @@ export async function downloadFromGCS(objectPath: string): Promise<Buffer> {
 }
 
 /**
- * products/{productNumber}_{순번}.{ext} 형태로 이미 업로드된 이미지들을
+ * products/{productNumber}_{순번}.{ext} 형태로 이미 업로드된 일반 상품이미지들을
  * 순번(1, 2, 3...) 순서대로 조회해 URL 배열로 반환한다.
- * 순번 순서 = "색상1 대표, 색상2 대표, ..., 상세1, 상세2..." 순서이므로 재정렬하지 않는다.
  */
 export async function listProductImageUrls(productNumber: string): Promise<string[]> {
   const prefix = `products/${productNumber}_`;
@@ -65,4 +64,22 @@ export async function listProductImageUrls(productNumber: string): Promise<strin
     .sort((a, b) => a.idx - b.idx);
 
   return matched.map((m) => `https://storage.googleapis.com/${BUCKET_NAME}/${m.name}`);
+}
+
+/**
+ * products/{productNumber}_color_{색상명}.{ext} 형태로 이미 업로드된 색상별 대표이미지를
+ * 색상명 기준으로 매칭해 { color, imageUrl } 배열로 반환한다.
+ */
+export async function listProductColorImageUrls(productNumber: string): Promise<{ color: string; imageUrl: string }[]> {
+  const prefix = `products/${productNumber}_color_`;
+  const [files] = await getStorage().bucket(BUCKET_NAME).getFiles({ prefix });
+  const suffixPattern = /^(.+)\.(jpe?g|png|gif|webp)$/i;
+
+  return files
+    .map((f) => {
+      const suffix = f.name.slice(prefix.length); // 예: "레드.jpg"
+      const m = suffix.match(suffixPattern);
+      return m ? { color: m[1], imageUrl: `https://storage.googleapis.com/${BUCKET_NAME}/${f.name}` } : null;
+    })
+    .filter((x): x is { color: string; imageUrl: string } => x !== null);
 }

@@ -122,6 +122,7 @@
   "product.brandSizeInfo": "ข้อมูลไซซ์ของแบรนด์",
   "product.brandModelInfo": "ข้อมูลแบบของแบรนด์",
   "product.detailSizeTitle": "รายละเอียดไซซ์ / รายละเอียดสินค้า",
+  "product.productImagesTitle": "รูปภาพสินค้า",
   "cart.title": "ตะกร้าสินค้า",
   "cart.priceChecking": "กำลังตรวจสอบราคา...",
   "cart.selectAll": "เลือกทั้งหมด ({{selected}}/{{total}})",

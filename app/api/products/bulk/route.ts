@@ -96,7 +96,13 @@ export async function POST(req: NextRequest) {
         remark:        p.remark || null,
       };
 
+      // 색상별 사이즈:수량 → variant 목록 (색상마다 사이즈 구성/수량이 달라도 그대로 반영됨)
+      const colorRows = (p.colorRows as { color: string; sizeQty: { size: string; stock: number }[] }[] | undefined) ?? [];
+      const variantList = colorRows.flatMap(cr => cr.sizeQty.map(sq => ({ color: cr.color, size: sq.size, stock: sq.stock })));
+      const colorImageList = (p.colorImages as { color: string; imageUrl: string }[] | undefined) ?? [];
+
       if (p.action === 'update' && p.existingId) {
+        // 재업로드 시 재고/색상이미지는 시트 내용으로 전체 덮어쓴다 (시트에 없는 기존 조합은 삭제됨)
         await prisma.product.update({
           where: { id: p.existingId },
           data:  {
@@ -105,15 +111,12 @@ export async function POST(req: NextRequest) {
               deleteMany: {},
               create: gradePrice.map(gp => ({ grade: gp.grade as any, price: Number(gp.price) })),
             },
+            variants: { deleteMany: {}, create: variantList },
+            colorImages: { deleteMany: {}, create: colorImageList },
           },
         });
         results.updated++;
       } else {
-        // 일괄등록은 색상×사이즈별 재고를 따로 입력받지 않으므로, 둘 다 있으면 사이즈당 500장으로 자동 등록
-        const variantList = (base.colors.length > 0 && base.sizes.length > 0)
-          ? base.colors.flatMap((color: string) => base.sizes.map((size: string) => ({ color, size, stock: 500 })))
-          : [];
-
         await prisma.product.create({
           data: {
             ...base,
@@ -121,6 +124,7 @@ export async function POST(req: NextRequest) {
               create: gradePrice.map(gp => ({ grade: gp.grade as any, price: Number(gp.price) })),
             } : undefined,
             variants: variantList.length > 0 ? { create: variantList } : undefined,
+            colorImages: colorImageList.length > 0 ? { create: colorImageList } : undefined,
           },
         });
         results.created++;

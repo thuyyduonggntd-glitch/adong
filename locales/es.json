@@ -122,6 +122,7 @@
   "product.brandSizeInfo": "Información de tallas de la marca",
   "product.brandModelInfo": "Información de modelos de la marca",
   "product.detailSizeTitle": "Tallas detalladas / Detalle del producto",
+  "product.productImagesTitle": "Imágenes del producto",
   "cart.title": "Carrito",
   "cart.priceChecking": "Comprobando precio...",
   "cart.selectAll": "Seleccionar todo ({{selected}}/{{total}})",

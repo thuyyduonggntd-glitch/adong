@@ -8,6 +8,9 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { localizeCategoryName } from '@/lib/productLocale';
+import { resolveColorImage } from '@/lib/productImages';
+
+const PLACEHOLDER_IMG = 'https://placehold.co/600x600/EFF6FF/2563EB?text=상품';
 
 type BrandInfo = {
   notice: string | null;
@@ -44,8 +47,9 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
   const [brandFaved, setBrandFaved]         = useState(false);
   const [togglingBrand, setTogglingBrand]   = useState(false);
   const [added, setAdded]                   = useState(false);
-  const [sizeImgIdx, setSizeImgIdx]         = useState(0);
-  const [mainImgIdx, setMainImgIdx]         = useState(0);
+  const [mainImg, setMainImg]               = useState(() =>
+    resolveColorImage(product.colors?.[0], product.colorImages, product.images, PLACEHOLDER_IMG)
+  );
 
   const basePrice       = product.myGradePrice ?? product.price;
   const displayPrice    = product.myFinalPrice ?? calcFinalPrice(basePrice, product.isOnSale, product.saleType, product.saleValue);
@@ -65,8 +69,7 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
     if (!selectedSize || !selectedColor) { alert(t('product.selectSizeColorAlert')); return; }
     if (isOutOfStock) { alert(t('product.outOfStockAlert')); return; }
     const effectivePrice = finalPrice;
-    const colorIdx = product.colors.indexOf(selectedColor);
-    const colorImage = (colorIdx >= 0 && product.images[colorIdx]) ? product.images[colorIdx] : product.images[0];
+    const colorImage = resolveColorImage(selectedColor, product.colorImages, product.images, PLACEHOLDER_IMG);
     addItem({ id: product.id, name: localizedName, price: effectivePrice, image: colorImage }, quantity, selectedSize, selectedColor);
     setAdded(true);
     setTimeout(() => setAdded(false), 2000);
@@ -113,7 +116,7 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
         {/* 이미지 */}
         <div className="space-y-3">
           <div className="relative aspect-square bg-primary-50 rounded-2xl overflow-hidden">
-            <Image src={product.images[mainImgIdx] || 'https://placehold.co/600x600/EFF6FF/2563EB?text=상품'} alt={localizedName} fill className="object-cover" />
+            <Image src={mainImg} alt={localizedName} fill className="object-cover" />
             {session && product.isOnSale && (
               <span className="absolute top-3 left-3 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-md">
                 {getSaleLabel(product.saleType, product.saleValue, t('common.discount'))}
@@ -125,13 +128,22 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
               </span>
             )}
           </div>
-          {product.images.length > 1 && (
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {product.images.map((img: string, i: number) => (
-                <button key={i} onClick={() => setMainImgIdx(i)}
-                  className={`relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border-2 transition-colors ${mainImgIdx === i ? 'border-primary-500' : 'border-slate-100 hover:border-primary-400'}`}>
-                  <Image src={img} alt="" fill className="object-cover" />
+          {((product.colorImages?.length ?? 0) > 0 || (product.sizeImages?.length ?? 0) > 0) && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              {(product.colorImages ?? []).map((ci: { color: string; imageUrl: string }) => (
+                <button key={`color-${ci.color}`} onClick={() => { setSelectedColor(ci.color); setMainImg(ci.imageUrl); }}
+                  title={ci.color}
+                  className={`relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border-2 transition-colors ${mainImg === ci.imageUrl ? 'border-primary-500' : 'border-slate-100 hover:border-primary-400'}`}>
+                  <Image src={ci.imageUrl} alt={ci.color} fill className="object-cover" />
                 </button>
+              ))}
+              {(product.colorImages?.length ?? 0) > 0 && (product.sizeImages?.length ?? 0) > 0 && (
+                <div className="w-px self-stretch bg-slate-200 flex-shrink-0" />
+              )}
+              {(product.sizeImages ?? []).map((img: string, i: number) => (
+                <div key={`size-${i}`} className="relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border-2 border-slate-100">
+                  <Image src={img} alt="" fill className="object-cover" />
+                </div>
               ))}
             </div>
           )}
@@ -314,7 +326,7 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
               {product.colors.map((c: string, i: number) => (
                 <button key={c} onClick={() => {
                   setSelectedColor(c);
-                  if (product.images[i]) setMainImgIdx(i);
+                  setMainImg(resolveColorImage(c, product.colorImages, product.images, PLACEHOLDER_IMG));
                 }}
                   className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${selectedColor === c ? 'bg-primary-600 text-white border-primary-600' : 'border-slate-300 text-slate-600 hover:border-primary-400'}`}>
                   {localizedColors[i] || c}
@@ -431,20 +443,15 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
         </div>
       )}
 
-      {/* ── 상세 사이즈 이미지 ── */}
-      {product.sizeImages && product.sizeImages.length > 0 && (
+      {/* ── 상품 이미지 (상세페이지 스타일 — 전체폭, 틈 없이 세로 연결) ── */}
+      {product.images && product.images.length > 0 && (
         <div className="mt-12 border-t border-slate-100 pt-10">
-          <h2 className="text-lg font-bold text-slate-800 mb-5">{t('product.detailSizeTitle')}</h2>
-          <div className="flex gap-3 overflow-x-auto pb-2 mb-4">
-            {product.sizeImages.map((img: string, i: number) => (
-              <button key={i} onClick={() => setSizeImgIdx(i)}
-                className={`relative w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden border-2 transition-colors ${sizeImgIdx === i ? 'border-primary-500' : 'border-slate-200'}`}>
-                <Image src={img} alt={`detail ${i + 1}`} fill className="object-cover" />
-              </button>
+          <h2 className="text-lg font-bold text-slate-800 mb-5">{t('product.productImagesTitle')}</h2>
+          <div className="max-w-2xl mx-auto">
+            {product.images.map((img: string, i: number) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img key={i} src={img} alt={`product ${i + 1}`} className="block w-full max-w-full h-auto m-0 p-0 align-top" />
             ))}
-          </div>
-          <div className="relative w-full max-w-lg rounded-2xl overflow-hidden border border-slate-100">
-            <Image src={product.sizeImages[sizeImgIdx]} alt="detail size" width={600} height={600} className="w-full object-contain" />
           </div>
         </div>
       )}

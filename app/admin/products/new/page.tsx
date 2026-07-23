@@ -38,8 +38,10 @@ const SIZE_CATEGORY_SLUGS = CATEGORY_GROUPS.find((g) => g.key === 'size')!.slugs
 
 export default function NewProductPage() {
   const router = useRouter();
-  const imgRef     = useRef<HTMLInputElement>(null);
-  const sizeImgRef = useRef<HTMLInputElement>(null);
+  const imgRef      = useRef<HTMLInputElement>(null);
+  const sizeImgRef  = useRef<HTMLInputElement>(null);
+  const colorImgRef = useRef<HTMLInputElement>(null);
+  const pendingColorRef = useRef<string>('');
 
   const [categories, setCategories] = useState<{ id: string; name: string; slug: string }[]>([]);
   const [categoryGroup, setCategoryGroup] = useState<'clothing' | 'item' | ''>('');
@@ -59,6 +61,8 @@ export default function NewProductPage() {
 
   const [images, setImages]         = useState<string[]>([]);
   const [sizeImages, setSizeImages] = useState<string[]>([]);
+  const [colorImages, setColorImages] = useState<Record<string, string>>({});
+  const [colorPicker, setColorPicker] = useState<string | null>(null);
   const [sizeInput, setSizeInput]   = useState('');
   const [colorInput, setColorInput] = useState('');
   const [loading, setLoading]       = useState(false);
@@ -150,6 +154,24 @@ export default function NewProductPage() {
     setSizeExtraPrices((prev) => { const next = { ...prev }; delete next[s]; return next; });
   };
   const addColor = () => { if (colorInput && !form.colors.includes(colorInput)) { set('colors', [...form.colors, colorInput]); setColorInput(''); } };
+  const removeColor = (c: string) => {
+    set('colors', form.colors.filter((x) => x !== c));
+    setColorImages((prev) => { const next = { ...prev }; delete next[c]; return next; });
+  };
+
+  const uploadColorImage = async (file: File, color: string) => {
+    setUploading(true);
+    setUploadProgress(0);
+    try {
+      const urls = await uploadFilesXHR([file], setUploadProgress);
+      if (urls[0]) setColorImages((prev) => ({ ...prev, [color]: urls[0] }));
+    } catch (e: any) {
+      alert(e.message || '업로드 실패');
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -186,6 +208,7 @@ export default function NewProductPage() {
         sizeImages,
         prices:          gradePrices,
         variants,
+        colorImages:     Object.entries(colorImages).map(([color, imageUrl]) => ({ color, imageUrl })),
         sizeExtraPrices: Object.keys(extraPricesObj).length ? extraPricesObj : null,
       }),
     });
@@ -427,11 +450,64 @@ export default function NewProductPage() {
             <div className="flex flex-wrap gap-1">
               {form.colors.map((c) => (
                 <span key={c} className="badge bg-slate-100 text-slate-600 text-xs">
-                  {c}<button type="button" onClick={() => set('colors', form.colors.filter((x) => x !== c))} className="ml-1">×</button>
+                  {c}<button type="button" onClick={() => removeColor(c)} className="ml-1">×</button>
                 </span>
               ))}
             </div>
           </div>
+
+          {/* 색상별 대표 이미지 */}
+          {form.colors.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-2">색상별 대표 이미지 <span className="font-normal text-slate-400">(색상당 1장, 색상 선택 시 대표로 표시됩니다 — 새로 업로드하거나 아래 상품이미지 중에서 선택할 수 있습니다)</span></label>
+              <input ref={colorImgRef} type="file" accept="image/*" className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f && pendingColorRef.current) uploadColorImage(f, pendingColorRef.current);
+                  e.target.value = '';
+                }} />
+              <div className="flex flex-wrap gap-3">
+                {form.colors.map((c) => (
+                  <div key={c} className="relative flex flex-col items-center gap-1">
+                    <button type="button"
+                      onClick={() => setColorPicker((p) => (p === c ? null : c))}
+                      disabled={uploading}
+                      className="relative w-16 h-16 rounded-lg overflow-hidden border border-dashed border-slate-300 hover:border-primary-400 flex items-center justify-center text-slate-300 text-xs group">
+                      {colorImages[c] ? (
+                        <>
+                          <img src={colorImages[c]} alt="" className="w-full h-full object-cover" />
+                          <span className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs">변경</span>
+                        </>
+                      ) : '선택'}
+                    </button>
+                    <span className="text-xs text-slate-500 max-w-16 truncate" title={c}>{c}</span>
+
+                    {colorPicker === c && (
+                      <div className="absolute top-full left-0 z-10 mt-1 p-2.5 bg-white border border-slate-200 rounded-lg shadow-lg w-56">
+                        <p className="text-xs font-medium text-slate-500 mb-1.5">상품이미지에서 선택</p>
+                        {images.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5 mb-2">
+                            {images.map((img, i) => (
+                              <button key={i} type="button"
+                                onClick={() => { setColorImages((prev) => ({ ...prev, [c]: img })); setColorPicker(null); }}
+                                className="w-10 h-10 rounded overflow-hidden border border-slate-200 hover:border-primary-400">
+                                <img src={img} alt="" className="w-full h-full object-cover" />
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-400 mb-2">업로드된 상품이미지가 없습니다.</p>
+                        )}
+                        <button type="button"
+                          onClick={() => { pendingColorRef.current = c; colorImgRef.current?.click(); setColorPicker(null); }}
+                          className="text-xs text-primary-600 hover:underline">새 파일 업로드</button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* 재고 그리드 */}
           {form.colors.length > 0 && form.sizes.length > 0 ? (

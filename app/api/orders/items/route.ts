@@ -419,7 +419,7 @@ export async function GET(req: NextRequest) {
     const items = await prisma.orderItem.findMany({
       where,
       include: {
-        product: { select: { id: true, name: true, images: true, brand: true, colors: true, productNumber: true, isOnSale: true, saleType: true, saleValue: true } },
+        product: { select: { id: true, name: true, images: true, brand: true, colors: true, colorImages: { select: { color: true, imageUrl: true } }, productNumber: true, isOnSale: true, saleType: true, saleValue: true } },
         order:   { select: { id: true, status: true, userId: true, createdAt: true, note: true, user: { select: { name: true, email: true } } } },
       },
       orderBy: { order: { createdAt: 'desc' } },
@@ -436,7 +436,7 @@ export async function GET(req: NextRequest) {
     const items = await prisma.orderItem.findMany({
       where,
       include: {
-        product: { select: { id: true, name: true, images: true, brand: true, colors: true, productNumber: true, isOnSale: true, saleType: true, saleValue: true } },
+        product: { select: { id: true, name: true, images: true, brand: true, colors: true, colorImages: { select: { color: true, imageUrl: true } }, productNumber: true, isOnSale: true, saleType: true, saleValue: true } },
         order:   { select: { id: true, status: true, userId: true, createdAt: true, note: true, user: { select: { name: true, email: true } } } },
       },
       orderBy: { cancelledAt: 'desc' },

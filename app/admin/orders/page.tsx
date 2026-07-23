@@ -5,12 +5,14 @@ import { formatPrice, formatDate } from '@/lib/utils';
 import { printInboundRows, type InboundPrintRow } from '@/lib/printInbound';
 import EditPriceModal from '@/components/admin/EditPriceModal';
 import BrandPriceModal, { type BrandModalRow } from '@/components/admin/BrandPriceModal';
+import { resolveColorImage } from '@/lib/productImages';
 
 type DailyRow = InboundPrintRow & { id: string; price: number | null };
 
 /* ── 타입 ── */
 type SaleProduct = {
   id: string; name: string; images: string[]; brand: string | null; colors: string[];
+  colorImages?: { color: string; imageUrl: string }[];
   isOnSale: boolean; saleType: string | null; saleValue: number | null;
   productNumber?: string | null;
 };
@@ -102,8 +104,7 @@ function ProductCells({ product, brand, size, color, quantity, price, isOnSale, 
   onBrandClick?: (brand: string) => void;
   onEditPrice?: () => void;
 }) {
-  const colorIdx = product.colors?.indexOf(color) ?? -1;
-  const imgSrc = (colorIdx >= 0 && product.images[colorIdx]) ? product.images[colorIdx] : (product.images[0] || 'https://placehold.co/40x40/EFF6FF/2563EB?text=상품');
+  const imgSrc = resolveColorImage(color, product.colorImages, product.images, 'https://placehold.co/40x40/EFF6FF/2563EB?text=상품');
   return (
     <>
       <td className="px-3 py-3">

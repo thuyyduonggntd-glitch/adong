@@ -3,11 +3,13 @@ import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import { formatPrice } from '@/lib/utils';
 import Pagination from '@/components/ui/Pagination';
+import { resolveColorImage } from '@/lib/productImages';
 
 const PAGE_SIZE = 40;
 
 type SaleProduct = {
   id: string; name: string; images: string[]; brand: string | null; colors: string[];
+  colorImages?: { color: string; imageUrl: string }[];
   productNumber?: string | null;
 };
 /* 세일 스냅샷: OrderItem 자체에 저장된 "주문 당시" 세일 상태 (실시간 product.isOnSale 아님) */
@@ -105,10 +107,7 @@ function CancelTable({
             </thead>
             <tbody className="divide-y divide-slate-50">
               {pagedItems.map((it) => {
-                const colorIdx = it.product.colors?.indexOf(it.color || '') ?? -1;
-                const imgSrc = (colorIdx >= 0 && it.product.images[colorIdx])
-                  ? it.product.images[colorIdx]
-                  : (it.product.images[0] || 'https://placehold.co/40x40/EFF6FF/2563EB?text=상품');
+                const imgSrc = resolveColorImage(it.color, it.product.colorImages, it.product.images, 'https://placehold.co/40x40/EFF6FF/2563EB?text=상품');
                 const isSel   = selected.has(it.id);
                 const isToday = new Date(it.cancelledAt).getTime() >= todayMidnight.getTime();
                 const wasConfirmed = !!it.confirmedAt;

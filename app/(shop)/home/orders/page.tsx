@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Pagination from '@/components/ui/Pagination';
+import { resolveColorImage } from '@/lib/productImages';
 
 const PAGE_SIZE = 40;
 
@@ -14,7 +15,7 @@ const PAGE_SIZE = 40;
    공통 타입
 ════════════════════════════════════════ */
 type Product = {
-  id: string; name: string; images: string[]; colors: string[]; brand: string | null;
+  id: string; name: string; images: string[]; colors: string[]; colorImages?: { color: string; imageUrl: string }[]; brand: string | null;
   productNumber?: string | null;
   sizeExtraPrices?: Record<string, number> | null;
 };
@@ -133,8 +134,7 @@ function ProductCells({ product, size, color, quantity, price, orderCreatedAt, i
       : priceNoSurcharge + saleValue + sizeSurcharge
     : null;
   const total    = price * quantity;
-  const colorIdx = product.colors?.indexOf(color) ?? -1;
-  const imgSrc   = (colorIdx >= 0 && product.images[colorIdx]) ? product.images[colorIdx] : (product.images[0] || 'https://placehold.co/48x48');
+  const imgSrc   = resolveColorImage(color, product.colorImages, product.images, 'https://placehold.co/48x48');
   return (
     <>
       <td className="px-3 py-3">

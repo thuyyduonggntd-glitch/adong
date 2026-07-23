@@ -87,6 +87,7 @@ export async function POST(req: NextRequest) {
   const regularPrice = gradePrice.find((p) => p.grade === 'REGULAR')?.price ?? Number(d.price ?? 0);
 
   const variantList = (d.variants as { color: string; size: string; stock: number }[] | undefined) ?? [];
+  const colorImageList = (d.colorImages as { color: string; imageUrl: string }[] | undefined) ?? [];
 
   const product = await prisma.product.create({
     data: {
@@ -117,8 +118,11 @@ export async function POST(req: NextRequest) {
       variants: variantList.length > 0 ? {
         create: variantList.map((v) => ({ color: v.color, size: v.size, stock: Number(v.stock ?? 0) })),
       } : undefined,
+      colorImages: colorImageList.length > 0 ? {
+        create: colorImageList.map((c) => ({ color: c.color, imageUrl: c.imageUrl })),
+      } : undefined,
     },
-    include: { prices: true, variants: true },
+    include: { prices: true, variants: true, colorImages: true },
   });
 
   const displayName = product.brand?.trim() || product.name;

@@ -41,6 +41,7 @@ export async function GET() {
         product: {
           select: {
             id: true, name: true, images: true, brand: true, colors: true,
+            colorImages: { select: { color: true, imageUrl: true } },
             isOnSale: true, saleType: true, saleValue: true, productNumber: true,
             category: { select: { name: true } },
           },
@@ -50,13 +51,13 @@ export async function GET() {
   } as const;
 
   const itemInclude = {
-    product: { select: { id: true, name: true, images: true, brand: true, colors: true, productNumber: true, isOnSale: true, saleType: true, saleValue: true } },
+    product: { select: { id: true, name: true, images: true, brand: true, colors: true, colorImages: { select: { color: true, imageUrl: true } }, productNumber: true, isOnSale: true, saleType: true, saleValue: true } },
     order: { select: { id: true, status: true, userId: true, createdAt: true, note: true, user: { select: { name: true, email: true } } } },
   } as const;
 
   const inboundInclude = {
     user: { select: { id: true, name: true, email: true } },
-    items: { include: { product: { select: { id: true, name: true, images: true, brand: true, isOnSale: true, saleType: true, saleValue: true, sizes: true, colors: true, productNumber: true } } } },
+    items: { include: { product: { select: { id: true, name: true, images: true, brand: true, isOnSale: true, saleType: true, saleValue: true, sizes: true, colors: true, colorImages: { select: { color: true, imageUrl: true } }, productNumber: true } } } },
   } as const;
 
   const [

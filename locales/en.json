@@ -100,7 +100,6 @@
   "product.sizeSelectHint": "Please select an option below to order.",
   "product.color": "Color",
   "product.outOfStock": "Sold Out",
-  "product.stock": "Stock: {{count}}",
   "product.quantity": "Quantity",
   "product.selectSizeColorAlert": "Please select a size and color.",
   "product.outOfStockAlert": "This item is sold out.",

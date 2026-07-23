@@ -100,7 +100,6 @@
   "product.sizeSelectHint": "กรุณาเลือกด้านล่างเพื่อสั่งซื้อ",
   "product.color": "สี",
   "product.outOfStock": "สินค้าหมด",
-  "product.stock": "สต็อก: {{count}}",
   "product.quantity": "จำนวน",
   "product.selectSizeColorAlert": "กรุณาเลือกไซซ์และสี",
   "product.outOfStockAlert": "สินค้านี้หมดแล้ว",

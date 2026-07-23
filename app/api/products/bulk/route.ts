@@ -90,13 +90,12 @@ export async function POST(req: NextRequest) {
         sizeCategoryId,
         sizes:         p.sizes || [],
         colors:        p.colors || [],
-        stock:         0,
         remark:        p.remark || null,
       };
 
-      // 색상별 사이즈:수량 → variant 목록 (색상마다 사이즈 구성/수량이 달라도 그대로 반영됨)
+      // 색상별 사이즈:수량 → variant 목록 (수량은 저장하지 않고 0 이하만 품절로 반영)
       const colorRows = (p.colorRows as { color: string; sizeQty: { size: string; stock: number }[] }[] | undefined) ?? [];
-      const variantList = colorRows.flatMap(cr => cr.sizeQty.map(sq => ({ color: cr.color, size: sq.size, stock: sq.stock })));
+      const variantList = colorRows.flatMap(cr => cr.sizeQty.map(sq => ({ color: cr.color, size: sq.size, isOutOfStock: sq.stock <= 0 })));
       const colorImageList = (p.colorImages as { color: string; imageUrl: string }[] | undefined) ?? [];
 
       if (p.action === 'update' && p.existingId) {

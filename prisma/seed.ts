@@ -65,7 +65,6 @@ async function main() {
         categoryId: categories[0].id,
         sizes: ['50', '60', '70'],
         colors: ['화이트', '민트', '연핑크'],
-        stock: 50,
       },
     }),
     prisma.product.create({
@@ -77,7 +76,6 @@ async function main() {
         categoryId: categories[1].id,
         sizes: ['70', '80', '90'],
         colors: ['아이보리', '베이지', '스카이블루'],
-        stock: 30,
       },
     }),
     prisma.product.create({
@@ -89,7 +87,6 @@ async function main() {
         categoryId: categories[2].id,
         sizes: ['90', '100', '110'],
         colors: ['블루', '옐로우'],
-        stock: 25,
       },
     }),
     prisma.product.create({
@@ -101,7 +98,6 @@ async function main() {
         categoryId: categories[3].id,
         sizes: ['120', '130', '140', '150'],
         colors: ['네이비', '그레이', '화이트'],
-        stock: 40,
       },
     }),
     prisma.product.create({
@@ -113,7 +109,6 @@ async function main() {
         categoryId: categories[4].id,
         sizes: ['FREE'],
         colors: ['화이트', '민트'],
-        stock: 20,
       },
     }),
     prisma.product.create({
@@ -125,7 +120,6 @@ async function main() {
         categoryId: categories[1].id,
         sizes: ['70', '80', '90'],
         colors: ['연청', '진청'],
-        stock: 35,
       },
     }),
   ]);

@@ -100,7 +100,6 @@
   "product.sizeSelectHint": "Выберите вариант ниже, чтобы оформить заказ.",
   "product.color": "Цвет",
   "product.outOfStock": "Нет в наличии",
-  "product.stock": "В наличии: {{count}}",
   "product.quantity": "Количество",
   "product.selectSizeColorAlert": "Выберите размер и цвет.",
   "product.outOfStockAlert": "Этот товар распродан.",

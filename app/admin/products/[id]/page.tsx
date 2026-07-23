@@ -72,7 +72,7 @@ export default function EditProductPage() {
   const [categories, setCategories] = useState<{ id: string; name: string; slug: string }[]>([]);
   const [categoryGroup, setCategoryGroup] = useState<'clothing' | 'item' | ''>('');
   const [form, setForm] = useState({
-    name: '', description: '', stock: '',
+    name: '', description: '',
     categoryId: '', sizeCategoryId: '', brand: '', productNumber: '', gender: '공용',
     season: '', remark: '',
     isOnSale: false,
@@ -93,7 +93,7 @@ export default function EditProductPage() {
   const [uploading, setUploading]   = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [fetching, setFetching]     = useState(true);
-  const [variantStocks, setVariantStocks]       = useState<Record<string, string>>({});
+  const [variantOutOfStock, setVariantOutOfStock] = useState<Record<string, boolean>>({});
   const [sizeExtraPrices, setSizeExtraPrices]   = useState<Record<string, string>>({});
 
   const [translations, setTranslations] = useState<Record<TransLang, TransFields>>(
@@ -114,7 +114,6 @@ export default function EditProductPage() {
       setForm({
         name:          product.name || '',
         description:   product.description || '',
-        stock:         String(product.stock || ''),
         categoryId:    product.categoryId || '',
         sizeCategoryId: product.sizeCategoryId || '',
         brand:         product.brand || '',
@@ -166,11 +165,11 @@ export default function EditProductPage() {
       }
 
       // 기존 variants 불러오기
-      const variantMap: Record<string, string> = {};
-      (product.variants || []).forEach((v: { color: string; size: string; stock: number }) => {
-        variantMap[`${v.color}::${v.size}`] = String(v.stock);
+      const variantMap: Record<string, boolean> = {};
+      (product.variants || []).forEach((v: { color: string; size: string; isOutOfStock: boolean }) => {
+        variantMap[`${v.color}::${v.size}`] = Boolean(v.isOutOfStock);
       });
-      setVariantStocks(variantMap);
+      setVariantOutOfStock(variantMap);
 
       setTranslations(buildTranslationsFromProduct(product));
       setTranslatedAt(product.translatedAt || null);
@@ -189,15 +188,15 @@ export default function EditProductPage() {
   const subCategories  = activeGroupSlugs.map((slug) => categories.find((c) => c.slug === slug)).filter(Boolean) as { id: string; name: string; slug: string }[];
   const sizeCategories = SIZE_CATEGORY_SLUGS.map((slug) => categories.find((c) => c.slug === slug)).filter(Boolean) as { id: string; name: string; slug: string }[];
 
-  // 색상/사이즈 변경 시 재고 그리드 동기화
+  // 색상/사이즈 변경 시 품절 그리드 동기화
   useEffect(() => {
-    setVariantStocks((prev) => {
+    setVariantOutOfStock((prev) => {
       if (form.colors.length === 0 || form.sizes.length === 0) return prev;
-      const next: Record<string, string> = {};
+      const next: Record<string, boolean> = {};
       for (const color of form.colors) {
         for (const size of form.sizes) {
           const key = `${color}::${size}`;
-          next[key] = prev[key] ?? '0';
+          next[key] = prev[key] ?? false;
         }
       }
       return next;
@@ -289,9 +288,9 @@ export default function EditProductPage() {
     // 이월상품도 SALE과 동일한 할인율/할인금액 입력을 공유 — 값이 있으면 SALE 체크 여부와 무관하게 할인 적용
     const effectiveIsOnSale = form.isOnSale || (form.isCarryOver && Boolean(saleValue));
 
-    const variants = Object.entries(variantStocks).map(([key, stock]) => {
+    const variants = Object.entries(variantOutOfStock).map(([key, isOutOfStock]) => {
       const [color, size] = key.split('::');
-      return { color, size, stock: Number(stock || 0) };
+      return { color, size, isOutOfStock };
     });
 
     const extraPricesObj = Object.fromEntries(
@@ -315,7 +314,6 @@ export default function EditProductPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...form,
-        stock:           Number(form.stock),
         isOnSale:        effectiveIsOnSale,
         isCarryOver:     form.isCarryOver,
         saleType:        effectiveIsOnSale && saleValue ? saleType : null,
@@ -649,10 +647,10 @@ export default function EditProductPage() {
             </div>
           )}
 
-          {/* 재고 그리드 */}
+          {/* 품절 그리드 */}
           {form.colors.length > 0 && form.sizes.length > 0 ? (
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-2">재고 (색상 × 사이즈)</label>
+              <label className="block text-xs font-medium text-slate-600 mb-2">판매 상태 (색상 × 사이즈) <span className="font-normal text-slate-400">— 누르면 품절로 표시</span></label>
               <div className="overflow-x-auto">
                 <table className="text-xs border-collapse">
                   <thead>
@@ -669,14 +667,16 @@ export default function EditProductPage() {
                         <td className="border border-slate-200 px-3 py-2 bg-slate-50 text-slate-600 font-medium whitespace-nowrap">{color}</td>
                         {form.sizes.map((size) => {
                           const key = `${color}::${size}`;
+                          const isOut = variantOutOfStock[key] ?? false;
                           return (
                             <td key={size} className="border border-slate-200 p-1 text-center">
-                              <input
-                                type="number" min="0"
-                                className="w-16 text-center text-sm focus:outline-none focus:bg-primary-50 rounded p-1"
-                                value={variantStocks[key] ?? '0'}
-                                onChange={(e) => setVariantStocks((prev) => ({ ...prev, [key]: e.target.value }))}
-                              />
+                              <button
+                                type="button"
+                                onClick={() => setVariantOutOfStock((prev) => ({ ...prev, [key]: !isOut }))}
+                                className={`w-16 text-xs font-medium rounded py-1 transition-colors ${isOut ? 'bg-red-100 text-red-600' : 'bg-green-50 text-green-700 hover:bg-green-100'}`}
+                              >
+                                {isOut ? '품절' : '판매중'}
+                              </button>
                             </td>
                           );
                         })}
@@ -687,7 +687,7 @@ export default function EditProductPage() {
               </div>
             </div>
           ) : (
-            <p className="text-xs text-slate-400">색상과 사이즈를 모두 추가하면 재고 입력 표가 나타납니다.</p>
+            <p className="text-xs text-slate-400">색상과 사이즈를 모두 추가하면 판매 상태 표가 나타납니다.</p>
           )}
         </div>
 

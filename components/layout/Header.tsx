@@ -27,6 +27,7 @@ export default function Header() {
   const pathname = usePathname();
   const count = useCartStore((s) => s.count());
   const [menuOpen, setMenuOpen] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [qnaCount, setQnaCount] = useState(0);
@@ -42,6 +43,7 @@ export default function Header() {
       }
       if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
+        setProfileMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -146,26 +148,26 @@ export default function Header() {
 
             {session ? (
               <div className="relative">
-                <button onClick={() => setMenuOpen(!menuOpen)} className="flex items-center gap-1 text-sm text-slate-700 hover:text-primary-600">
+                <button onClick={() => setProfileMenuOpen(!profileMenuOpen)} className="flex items-center gap-1 text-sm text-slate-700 hover:text-primary-600">
                   <span>{session.user?.name}</span>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
                 </button>
-                {menuOpen && (
+                {profileMenuOpen && (
                   <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-50">
-                    <Link href="/home/orders"   className="block px-4 py-2 text-sm text-slate-700 hover:bg-primary-50" onClick={() => setMenuOpen(false)}>{t('nav.orderManage')}</Link>
-                    <Link href="/home/wishlist" className="block px-4 py-2 text-sm text-red-500 hover:bg-red-50 flex items-center gap-1.5" onClick={() => setMenuOpen(false)}>
+                    <Link href="/home/orders"   className="block px-4 py-2 text-sm text-slate-700 hover:bg-primary-50" onClick={() => setProfileMenuOpen(false)}>{t('nav.orderManage')}</Link>
+                    <Link href="/home/wishlist" className="block px-4 py-2 text-sm text-red-500 hover:bg-red-50 flex items-center gap-1.5" onClick={() => setProfileMenuOpen(false)}>
                       <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
                       {t('nav.wishlistFull')}
                     </Link>
-                    <Link href="/home/mypage"          className="block px-4 py-2 text-sm text-slate-700 hover:bg-primary-50" onClick={() => setMenuOpen(false)}>{t('nav.mypageFull')}</Link>
-                    <Link href="/home/qna"             className="px-4 py-2 text-sm text-slate-700 hover:bg-primary-50 flex items-center" onClick={() => setMenuOpen(false)}>{t('nav.qna')}<QnaBadge count={qnaCount} /></Link>
+                    <Link href="/home/mypage"          className="block px-4 py-2 text-sm text-slate-700 hover:bg-primary-50" onClick={() => setProfileMenuOpen(false)}>{t('nav.mypageFull')}</Link>
+                    <Link href="/home/qna"             className="px-4 py-2 text-sm text-slate-700 hover:bg-primary-50 flex items-center" onClick={() => setProfileMenuOpen(false)}>{t('nav.qna')}<QnaBadge count={qnaCount} /></Link>
                     {(session.user as any)?.role === 'ADMIN' && (
-                      <Link href="/admin/dashboard" className="block px-4 py-2 text-sm text-primary-600 hover:bg-primary-50" onClick={() => setMenuOpen(false)}>{t('nav.admin')}</Link>
+                      <Link href="/admin/dashboard" className="block px-4 py-2 text-sm text-primary-600 hover:bg-primary-50" onClick={() => setProfileMenuOpen(false)}>{t('nav.admin')}</Link>
                     )}
                     <hr className="my-1" />
-                    <button onClick={() => { signOut({ callbackUrl: '/login' }); setMenuOpen(false); }} className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50">{t('nav.logout')}</button>
+                    <button onClick={() => { signOut({ callbackUrl: '/login' }); setProfileMenuOpen(false); }} className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50">{t('nav.logout')}</button>
                   </div>
                 )}
               </div>

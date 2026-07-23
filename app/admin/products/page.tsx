@@ -8,7 +8,7 @@ const PAGE_SIZE = 50;
 
 type GradePrice = { grade: string; price: number };
 type Product = {
-  id: string; name: string; price: number; stock: number; isActive: boolean;
+  id: string; name: string; price: number; isActive: boolean;
   images: string[]; brand: string | null; productNumber: string | null; season: string | null;
   isOnSale: boolean; saleType: string | null; saleValue: number | null; isCarryOver: boolean;
   gender: string | null;
@@ -244,7 +244,6 @@ export default function AdminProductsPage() {
                     <th className="px-3 py-3">시즌</th>
                     <th className="px-3 py-3">성별</th>
                     <th className="px-3 py-3">등급별 가격</th>
-                    <th className="px-3 py-3 text-center">재고</th>
                     <th className="px-3 py-3">비고</th>
                   </tr>
                 </thead>
@@ -308,9 +307,6 @@ export default function AdminProductsPage() {
                           <span className="text-xs text-slate-400">미설정</span>
                         )}
                       </td>
-                      <td className="px-3 py-2 text-center">
-                        <span className={product.stock === 0 ? 'text-red-500 font-semibold' : 'text-slate-700'}>{product.stock}</span>
-                      </td>
                       <td className="px-3 py-2 min-w-[140px]">
                         {editRemark?.id === product.id ? (
                           <input
@@ -344,7 +340,7 @@ export default function AdminProductsPage() {
                     </tr>
                   ))}
                   {filtered.length === 0 && (
-                    <tr><td colSpan={12} className="text-center py-12 text-slate-400">상품이 없습니다.</td></tr>
+                    <tr><td colSpan={11} className="text-center py-12 text-slate-400">상품이 없습니다.</td></tr>
                   )}
                 </tbody>
               </table>

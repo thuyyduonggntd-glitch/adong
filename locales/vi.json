@@ -100,7 +100,6 @@
   "product.sizeSelectHint": "Vui lòng chọn bên dưới để đặt hàng.",
   "product.color": "Màu sắc",
   "product.outOfStock": "Hết hàng",
-  "product.stock": "Tồn kho: {{count}}",
   "product.quantity": "Số lượng",
   "product.selectSizeColorAlert": "Vui lòng chọn size và màu sắc.",
   "product.outOfStockAlert": "Sản phẩm này đã hết hàng.",

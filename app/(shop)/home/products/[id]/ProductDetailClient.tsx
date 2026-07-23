@@ -58,10 +58,9 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
   const finalPrice      = displayPrice + sizeSurcharge;
 
   const selectedVariant = product.variants?.find(
-    (v: { color: string; size: string; stock: number }) => v.color === selectedColor && v.size === selectedSize
+    (v: { color: string; size: string; isOutOfStock: boolean }) => v.color === selectedColor && v.size === selectedSize
   );
-  const variantStock  = selectedVariant?.stock ?? null;
-  const isOutOfStock  = variantStock !== null && variantStock <= 0;
+  const isOutOfStock  = selectedVariant?.isOutOfStock ?? false;
 
   const handleAddCart = () => {
     if (!session) { router.push('/login'); return; }
@@ -287,20 +286,13 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
             </div>
           </div>
 
-          {/* 재고 표시 */}
-          {selectedColor && selectedSize && (
+          {/* 품절 표시 */}
+          {selectedColor && selectedSize && isOutOfStock && (
             <div className="mb-3">
-              {isOutOfStock ? (
-                <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5">
-                  <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
-                  {t('product.outOfStock')}
-                </span>
-              ) : variantStock !== null ? (
-                <span className="inline-flex items-center gap-1.5 text-sm text-slate-600 bg-green-50 border border-green-200 rounded-lg px-3 py-1.5">
-                  <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
-                  {t('product.stock', { count: variantStock })}
-                </span>
-              ) : null}
+              <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5">
+                <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+                {t('product.outOfStock')}
+              </span>
             </div>
           )}
 

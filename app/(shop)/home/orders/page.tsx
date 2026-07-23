@@ -120,6 +120,23 @@ function SubtotalRow({ items, leadingCols, trailingColSpan = 2 }: {
   );
 }
 
+/* 모바일 카드 목록용 합계 줄 — SubtotalRow의 카드 버전 */
+function MobileSubtotal({ items }: { items: Array<{ quantity: number; price: number }> }) {
+  const { t } = useTranslation();
+  const count    = items.length;
+  const totalQty = items.reduce((s, it) => s + it.quantity, 0);
+  const totalAmt = items.reduce((s, it) => s + it.price * it.quantity, 0);
+  return (
+    <div className="px-4 py-2.5 bg-slate-100 border-t-2 border-slate-200 flex items-center justify-between gap-2 text-xs text-slate-500">
+      <span>
+        {t('orders.subtotal')} <span className="font-bold text-slate-700">{t('orders.caseCount', { count })}</span>
+        {' · '}<span className="font-bold text-slate-700">{t('orders.unitCount', { count: totalQty })}</span>
+      </span>
+      <span className="font-bold text-primary-700 whitespace-nowrap">{formatPrice(totalAmt)}</span>
+    </div>
+  );
+}
+
 /* isOnSale/saleType/saleValue: 실시간 product 상태가 아니라 "주문 당시" 스냅샷을 받는다 */
 function ProductCells({ product, size, color, quantity, price, orderCreatedAt, isOnSale, saleType, saleValue, extra }: {
   product: Product; size: string; color: string; quantity: number; price: number;
@@ -174,6 +191,52 @@ function ProductCells({ product, size, color, quantity, price, orderCreatedAt, i
       </td>
       {extra !== undefined && <td className="px-3 py-3 text-center">{extra}</td>}
     </>
+  );
+}
+
+/* 모바일 카드용 — ProductCells와 동일한 할인가 계산 로직을 공유 (표 대신 카드로 보여줄 때 사용) */
+function ProductCardInfo({ product, size, color, quantity, price, isOnSale, saleType, saleValue }: {
+  product: Product; size: string; color: string; quantity: number; price: number;
+  isOnSale: boolean; saleType: string | null; saleValue: number | null;
+}) {
+  const sizeSurcharge    = (product.sizeExtraPrices?.[size] ?? 0);
+  const priceNoSurcharge = price - sizeSurcharge;
+  const beforeSalePrice  = isOnSale && saleType && saleValue
+    ? saleType === 'RATE'
+      ? Math.round(priceNoSurcharge / (1 - saleValue / 100)) + sizeSurcharge
+      : priceNoSurcharge + saleValue + sizeSurcharge
+    : null;
+  const total  = price * quantity;
+  const imgSrc = resolveColorImage(color, product.colorImages, product.images, 'https://placehold.co/56x56');
+  return (
+    <div className="flex gap-3">
+      <Link href={`/home/products/${product.id}`} className="flex-shrink-0">
+        <div className="relative w-14 h-14 rounded-lg overflow-hidden bg-primary-50">
+          <Image src={imgSrc} alt={product.name} fill className="object-cover" />
+        </div>
+      </Link>
+      <div className="flex-1 min-w-0">
+        {product.brand && (
+          <span className="block text-xs font-semibold text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded whitespace-nowrap w-fit mb-0.5">{product.brand}</span>
+        )}
+        <p className="font-medium text-slate-800 text-sm truncate">{product.name}</p>
+        {product.productNumber && <span className="text-xs text-slate-400 font-mono block">{product.productNumber}</span>}
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-1 text-xs text-slate-500">
+          <span>{size}</span><span className="text-slate-300">/</span><span>{color}</span>
+          <span className="text-slate-300">·</span><span className="font-semibold text-slate-700">{quantity}</span>
+          {isOnSale && saleValue && (
+            <span className="text-xs font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded-full">
+              {saleType === 'RATE' ? `-${saleValue}%` : `-${formatPrice(saleValue)}`}
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap items-baseline gap-1.5 mt-1">
+          {beforeSalePrice && <span className="text-xs text-slate-400 line-through">{formatPrice(beforeSalePrice)}</span>}
+          <span className={`text-sm font-bold ${beforeSalePrice ? 'text-red-600' : 'text-primary-700'}`}>{formatPrice(price)}</span>
+          <span className="text-xs text-slate-400">= <span className="font-bold text-slate-700">{formatPrice(total)}</span></span>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -534,7 +597,40 @@ export default function OrdersManagementPage() {
               {/* 주문 중 */}
               {activeFlat.length > 0 && (
                 <div className="card overflow-hidden">
-                  <div className="overflow-x-auto">
+                  {/* 모바일: 카드 목록 */}
+                  <div className="md:hidden divide-y divide-slate-100">
+                    {activeFlat.map((item) => {
+                      const checkable  = isCheckable(item);
+                      const isSelected = selectedItems.has(item.id);
+                      const st         = STATUS_LABEL[item.orderStatus] || STATUS_LABEL.PENDING;
+                      return (
+                        <div key={item.id} className={`p-3 flex gap-2 ${isSelected ? 'bg-red-50/40' : ''}`}>
+                          <div className="pt-1 flex-shrink-0 w-5 flex justify-center">
+                            {checkable ? (
+                              <input type="checkbox" checked={isSelected} onChange={() => toggleItem(item.id)} className="w-4 h-4 accent-red-500 cursor-pointer" />
+                            ) : item.cancelLocked ? (
+                              <span title={t('orders.lockedTitle')} className="text-slate-300 text-sm leading-none select-none">🔒</span>
+                            ) : !canCancelNow && !item.cancelledAt && !item.arrivedAt && !item.outOfStockAt && !item.unshippedAt ? (
+                              <span className="text-slate-200 text-xs">—</span>
+                            ) : null}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <ProductCardInfo product={item.product} size={item.size} color={item.color} quantity={item.quantity} price={item.price}
+                              isOnSale={item.isOnSale} saleType={item.saleType} saleValue={item.saleValue} />
+                            <div className="flex items-center justify-between mt-1.5">
+                              <span className="text-xs text-slate-400">
+                                {new Date(item.orderCreatedAt).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              <span className={`badge text-xs ${st.color}`}>{st.icon} {st.label}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <MobileSubtotal items={activeFlat} />
+                  </div>
+                  {/* 데스크톱: 표 */}
+                  <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-sm min-w-max">
                       <thead>
                         <tr className="text-xs text-slate-500 bg-slate-50 border-b border-slate-100">
@@ -598,7 +694,26 @@ export default function OrdersManagementPage() {
                     <span className="text-xs text-slate-400">{t('orders.arrivedToday.desc')}</span>
                   </div>
                   <div className="card overflow-hidden border-l-4 border-emerald-400">
-                    <div className="overflow-x-auto">
+                    {/* 모바일: 카드 목록 */}
+                    <div className="md:hidden divide-y divide-emerald-50">
+                      {arrivedFlat.map((item) => (
+                        <div key={item.id} className="p-3">
+                          <ProductCardInfo product={item.product} size={item.size} color={item.color} quantity={item.quantity} price={item.price}
+                            isOnSale={item.isOnSale} saleType={item.saleType} saleValue={item.saleValue} />
+                          <div className="flex items-center justify-between mt-1.5">
+                            <span className="text-xs text-slate-400">
+                              {new Date(item.orderCreatedAt).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            <span className="text-xs text-emerald-600 font-medium">
+                              {item.arrivedAt ? new Date(item.arrivedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                      <MobileSubtotal items={arrivedFlat} />
+                    </div>
+                    {/* 데스크톱: 표 */}
+                    <div className="hidden md:block overflow-x-auto">
                       <table className="w-full text-sm min-w-max">
                         <thead>
                           <tr className="text-xs text-slate-500 bg-slate-50 border-b border-slate-100">
@@ -641,7 +756,26 @@ export default function OrdersManagementPage() {
                     <h3 className="text-sm font-bold text-orange-600">{t('orders.oosToday.title')}</h3>
                   </div>
                   <div className="card overflow-hidden border-l-4 border-orange-400">
-                    <div className="overflow-x-auto">
+                    {/* 모바일: 카드 목록 */}
+                    <div className="md:hidden divide-y divide-orange-50">
+                      {todayOusuFlat.map((item) => (
+                        <div key={item.id} className="p-3">
+                          <ProductCardInfo product={item.product} size={item.size} color={item.color} quantity={item.quantity} price={item.price}
+                            isOnSale={item.isOnSale} saleType={item.saleType} saleValue={item.saleValue} />
+                          <div className="flex items-center justify-between mt-1.5">
+                            <span className="text-xs text-slate-400">
+                              {new Date(item.orderCreatedAt).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            {item.outOfStockAt
+                              ? <span className="text-xs font-bold bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">{t('orders.badge.outOfStock')}</span>
+                              : <span className="text-xs font-bold bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">{t('orders.badge.unshipped')}</span>}
+                          </div>
+                        </div>
+                      ))}
+                      <MobileSubtotal items={todayOusuFlat} />
+                    </div>
+                    {/* 데스크톱: 표 */}
+                    <div className="hidden md:block overflow-x-auto">
                       <table className="w-full text-sm min-w-max">
                         <thead>
                           <tr className="text-xs text-slate-500 bg-slate-50 border-b border-slate-100">
@@ -695,7 +829,38 @@ export default function OrdersManagementPage() {
               </div>
             ) : (
               <div className="card overflow-hidden">
-                <div className="overflow-x-auto">
+                {/* 모바일: 카드 목록 */}
+                <div className="md:hidden divide-y divide-slate-100">
+                  {ousuItems.map((item) => {
+                    const isOos       = !!item.outOfStockAt;
+                    const processedAt = isOos ? item.outOfStockAt! : item.unshippedAt!;
+                    return (
+                      <div key={item.id} className="p-3">
+                        <div className="flex items-center justify-between mb-1.5">
+                          {isOos
+                            ? <span className="text-xs font-bold bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">{t('orders.badge.outOfStock')}</span>
+                            : <span className="text-xs font-bold bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">{t('orders.badge.unshipped')}</span>}
+                          <span className={`text-xs font-medium whitespace-nowrap ${isOos ? 'text-orange-500' : 'text-purple-500'}`}>
+                            {new Date(processedAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <ProductCardInfo product={item.product} size={item.size} color={item.color} quantity={item.quantity} price={item.price}
+                          isOnSale={item.isOnSale} saleType={item.saleType} saleValue={item.saleValue} />
+                        <div className="flex items-center justify-between mt-1.5 gap-2">
+                          <span className="text-xs text-slate-400">
+                            {new Date(item.order.createdAt).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          {item.remark && (
+                            <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded font-medium truncate max-w-[160px]">{item.remark}</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <MobileSubtotal items={ousuItems} />
+                </div>
+                {/* 데스크톱: 표 */}
+                <div className="hidden md:block overflow-x-auto">
                   <table className="w-full text-sm min-w-max">
                     <thead>
                       <tr className="text-xs text-slate-500 bg-slate-50 border-b border-slate-100">
@@ -858,7 +1023,81 @@ export default function OrdersManagementPage() {
                     </div>
 
                     {isOpen && (
-                      <div className="border-t border-slate-100 overflow-x-auto">
+                      <div className="border-t border-slate-100">
+                        {/* 모바일: 카드 목록 */}
+                        <div className="md:hidden divide-y divide-slate-50">
+                          {dayItems.map((it) => {
+                            if (it._source === 'order') {
+                              const oi = it as InboundOrderItem;
+                              const delivered = oi.order.status === 'DELIVERED';
+                              return (
+                                <div key={oi.id} className={`p-3 flex gap-3 ${delivered ? 'bg-green-50/40' : oi.deliveryRequestedAt ? 'bg-amber-50/40' : ''}`}>
+                                  <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-emerald-50 flex-shrink-0">
+                                    <Image src={oi.product.images[0] || 'https://placehold.co/44x44'} alt={oi.product.name} fill className="object-cover" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    {oi.product.brand && <span className="block w-fit text-xs font-semibold text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded mb-0.5">{oi.product.brand}</span>}
+                                    <p className="font-medium text-slate-800 text-sm truncate">{oi.product.name}</p>
+                                    {oi.product.productNumber && <span className="text-xs text-slate-400 font-mono block">{oi.product.productNumber}</span>}
+                                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-1 text-xs text-slate-500">
+                                      <span>{oi.size || '-'}</span><span className="text-slate-300">/</span><span>{oi.color || '-'}</span>
+                                      <span className="text-slate-300">·</span><span className="font-semibold text-slate-700">{oi.quantity}</span>
+                                      {oi.isOnSale && (
+                                        <span className="text-xs font-bold text-red-500">{oi.saleType === 'RATE' ? `${oi.saleValue}%` : oi.saleValue ? `${oi.saleValue.toLocaleString()}원` : ''}</span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center justify-between mt-1 gap-2">
+                                      <span className="text-sm font-semibold text-primary-700">{formatPrice(oi.price * oi.quantity)}</span>
+                                      <span className="text-xs text-emerald-600 font-medium whitespace-nowrap">{new Date(oi.arrivedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                    </div>
+                                    {(delivered || oi.deliveryRequestedAt) && (
+                                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold mt-1 inline-block ${delivered ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                                        {delivered ? t('orders.badge.delivered') : t('orders.badge.deliveryRequested')}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            }
+                            const si    = it as SupplierItem;
+                            const img   = si.product?.images?.[0] || 'https://placehold.co/44x44';
+                            const name  = si.product?.name || si.name;
+                            const brand = si.product?.brand || si.brand;
+                            const productNumber = si.product?.productNumber;
+                            return (
+                              <div key={si.id} className={`p-3 flex gap-3 ${si.deliveryRequestedAt ? 'bg-amber-50/40' : ''}`}>
+                                <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-blue-50 flex-shrink-0">
+                                  <Image src={img} alt={name} fill className="object-cover" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  {brand && <span className="block w-fit text-xs font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded mb-0.5">{brand}</span>}
+                                  <p className="font-medium text-slate-800 text-sm truncate">{name}</p>
+                                  {productNumber && <span className="text-xs text-slate-400 font-mono block">{productNumber}</span>}
+                                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-1 text-xs text-slate-500">
+                                    <span>{si.size || '-'}</span><span className="text-slate-300">/</span><span>{si.color || '-'}</span>
+                                    <span className="text-slate-300">·</span><span className="font-semibold text-slate-700">{si.quantity}</span>
+                                    {si.isOnSale && (
+                                      <span className="text-xs font-bold text-red-500">{si.saleType === 'RATE' ? `${si.saleValue}%` : si.saleValue ? `${si.saleValue.toLocaleString()}원` : ''}</span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center justify-between mt-1 gap-2">
+                                    <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">{t('orders.badge.supplier')}</span>
+                                    <span className="text-xs text-blue-500 font-medium whitespace-nowrap">{new Date(si.arrivedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                  </div>
+                                  {si.deliveryRequestedAt && (
+                                    <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-semibold mt-1 inline-block">{t('orders.badge.deliveryRequested')}</span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                          <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-sm font-semibold text-slate-700">
+                            <span className="text-xs font-normal text-slate-500">{t('orders.subtotal')}</span>
+                            <span>{totalQty} · <span className="text-primary-700">{totalAmt > 0 ? formatPrice(totalAmt) : '-'}</span></span>
+                          </div>
+                        </div>
+                        {/* 데스크톱: 표 */}
+                        <div className="hidden md:block overflow-x-auto">
                         <table className="w-full text-sm min-w-max">
                           <thead className="bg-slate-50 border-b border-slate-100 text-xs text-slate-400 uppercase">
                             <tr>
@@ -943,6 +1182,7 @@ export default function OrdersManagementPage() {
                             </tr>
                           </tfoot>
                         </table>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -988,7 +1228,44 @@ export default function OrdersManagementPage() {
               <div>
                 <Pagination page={shippingPage} totalPages={shippingTotalPages} onChange={setShippingPage}
                   summary={t('orders.totalCount', { count: shippingList.length })} />
-                <div className="card overflow-x-auto mt-2">
+                {/* 모바일: 카드 목록 */}
+                <div className="md:hidden space-y-2 mt-2">
+                  {pagedShippingList.map((s) => {
+                    const productNames = s.order.items.map((i) => i.product.name).join(', ');
+                    const arrivedAt    = s.order.items.find((i) => i.arrivedAt)?.arrivedAt;
+                    return (
+                      <div key={s.id} className="card p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-xs text-slate-400">#{s.order.id.slice(-8).toUpperCase()}</span>
+                          <span className="badge text-xs bg-green-100 text-green-800">{t('orders.badge.delivered')}</span>
+                        </div>
+                        <p className="text-sm text-slate-700 mt-1 truncate">{productNames}</p>
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-1 mt-2 text-xs">
+                          <span className="text-slate-400">{t('orders.col.shipDate')}: <span className="text-slate-600">{s.shippedAt ? formatDate(s.shippedAt) : '-'}</span></span>
+                          <span className="text-slate-400">
+                            {t('orders.col.arrivalDate')}:{' '}
+                            {arrivedAt ? (
+                              <button onClick={() => handleDateClick(arrivedAt)}
+                                className="text-green-600 font-medium underline decoration-dotted underline-offset-2">
+                                {formatDate(arrivedAt)}
+                              </button>
+                            ) : <span className="text-slate-300">-</span>}
+                          </span>
+                          <span className="text-slate-400">{t('orders.col.carrier')}: <span className="text-slate-600">{s.carrier || '-'}</span></span>
+                          <span className="text-slate-400">
+                            {t('orders.col.trackingNo')}:{' '}
+                            {s.trackingNumber
+                              ? <span className="font-mono text-primary-600 font-semibold">{s.trackingNumber}</span>
+                              : '-'}
+                          </span>
+                        </div>
+                        {s.note && <p className="text-xs text-slate-500 mt-1.5">{s.note}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* 데스크톱: 표 */}
+                <div className="hidden md:block card overflow-x-auto mt-2">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 border-b border-slate-100">
                     <tr className="text-left text-xs text-slate-400 uppercase">

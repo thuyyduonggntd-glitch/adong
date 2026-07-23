@@ -10,7 +10,7 @@ import { buildProductSearchWhere } from '@/lib/productSearch';
 
 // 어드민 상품 목록에 실제로 쓰이는 필드만 — description/번역 텍스트 등 무거운 컬럼은 제외
 const ADMIN_PRODUCT_SELECT = {
-  id: true, name: true, price: true, stock: true, isActive: true,
+  id: true, name: true, price: true, isActive: true,
   images: true, brand: true, productNumber: true, season: true,
   isOnSale: true, saleType: true, saleValue: true, isCarryOver: true,
   gender: true, remark: true,
@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
   const gradePrice = (d.prices as { grade: string; price: number }[] | undefined) ?? [];
   const regularPrice = gradePrice.find((p) => p.grade === 'REGULAR')?.price ?? Number(d.price ?? 0);
 
-  const variantList = (d.variants as { color: string; size: string; stock: number }[] | undefined) ?? [];
+  const variantList = (d.variants as { color: string; size: string; isOutOfStock?: boolean }[] | undefined) ?? [];
   const colorImageList = (d.colorImages as { color: string; imageUrl: string }[] | undefined) ?? [];
 
   const product = await prisma.product.create({
@@ -108,13 +108,12 @@ export async function POST(req: NextRequest) {
       sizeCategoryId: d.sizeCategoryId || null,
       sizes:         d.sizes        || [],
       colors:        d.colors       || [],
-      stock:         Number(d.stock || 0),
       remark:        d.remark || null,
       prices: gradePrice.length > 0 ? {
         create: gradePrice.map((gp) => ({ grade: gp.grade as any, price: Number(gp.price) })),
       } : undefined,
       variants: variantList.length > 0 ? {
-        create: variantList.map((v) => ({ color: v.color, size: v.size, stock: Number(v.stock ?? 0) })),
+        create: variantList.map((v) => ({ color: v.color, size: v.size, isOutOfStock: Boolean(v.isOutOfStock) })),
       } : undefined,
       colorImages: colorImageList.length > 0 ? {
         create: colorImageList.map((c) => ({ color: c.color, imageUrl: c.imageUrl })),

@@ -23,20 +23,17 @@ async function syncUserBalance(userId: string) {
   await prisma.user.update({ where: { id: userId }, data: { depositAmount: (dep._sum.amount ?? 0) - (wd._sum.amount ?? 0) } });
 }
 
-/** 품절 처리로 0으로 강제됐던 색상+사이즈 재고를, 품절 상태를 벗어나는 항목에 한해 스냅샷 값으로 복구 */
-async function restoreStockSnapshots(itemIds: string[]) {
+/** 품절 처리로 true가 됐던 색상+사이즈 품절 플래그를, 품절 상태를 벗어나는 항목에 한해 원래대로(false) 복구 */
+async function restoreOutOfStockFlags(itemIds: string[]) {
   const items = await prisma.orderItem.findMany({
-    where: { id: { in: itemIds }, outOfStockAt: { not: null }, stockSnapshot: { not: null } },
-    select: { id: true, productId: true, color: true, size: true, stockSnapshot: true },
+    where: { id: { in: itemIds }, outOfStockAt: { not: null } },
+    select: { id: true, productId: true, color: true, size: true },
   });
   for (const item of items) {
     await prisma.productVariant.updateMany({
       where: { productId: item.productId, color: item.color, size: item.size },
-      data: { stock: item.stockSnapshot! },
+      data: { isOutOfStock: false },
     });
-  }
-  if (items.length > 0) {
-    await prisma.orderItem.updateMany({ where: { id: { in: items.map((i) => i.id) } }, data: { stockSnapshot: null } });
   }
 }
 
@@ -74,24 +71,20 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: true, count: itemIds.length });
   }
 
-  /* ── 품절 처리 (admin) — 다른 상태 먼저 초기화 + 해당 색상·사이즈 재고를 0으로 차단 ── */
+  /* ── 품절 처리 (admin) — 다른 상태 먼저 초기화 + 해당 색상·사이즈를 품절로 표시 ── */
   if (action === 'outOfStock') {
     if (!isAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const now = new Date();
 
-    // 아직 품절 처리되지 않은 항목만: 현재 재고를 스냅샷으로 저장하고 0으로 차단 (중복 처리 방지)
+    // 아직 품절 처리되지 않은 항목만 품절 표시 (중복 처리 방지)
     const freshTargets = await prisma.orderItem.findMany({
       where: { id: { in: itemIds }, outOfStockAt: null },
       select: { id: true, productId: true, color: true, size: true },
     });
     for (const item of freshTargets) {
-      const variant = await prisma.productVariant.findUnique({
-        where: { productId_color_size: { productId: item.productId, color: item.color, size: item.size } },
-      });
-      await prisma.orderItem.update({ where: { id: item.id }, data: { stockSnapshot: variant?.stock ?? 0 } });
       await prisma.productVariant.updateMany({
         where: { productId: item.productId, color: item.color, size: item.size },
-        data: { stock: 0 },
+        data: { isOutOfStock: true },
       });
     }
 
@@ -110,10 +103,10 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: true, count: itemIds.length });
   }
 
-  /* ── 미송 처리 (admin) — 재고는 건드리지 않음. 품절→미송 전환 시 차단했던 재고만 복구 ── */
+  /* ── 미송 처리 (admin) — 품절→미송 전환 시 표시했던 품절 플래그만 복구 ── */
   if (action === 'unshipped') {
     if (!isAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    await restoreStockSnapshots(itemIds);
+    await restoreOutOfStockFlags(itemIds);
     const now = new Date();
     await prisma.orderItem.updateMany({
       where: { id: { in: itemIds } },
@@ -143,8 +136,8 @@ export async function PATCH(req: NextRequest) {
   if (action === 'revertToConfirmed') {
     if (!isAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    // 품절 처리로 차단됐던 재고 복구
-    await restoreStockSnapshots(itemIds);
+    // 품절 처리로 표시됐던 품절 플래그 복구
+    await restoreOutOfStockFlags(itemIds);
 
     // 기존에 arrivedAt이 있던 항목 → 출금 취소(입금) 처리
     const arrivedItems = await prisma.orderItem.findMany({
@@ -162,15 +155,6 @@ export async function PATCH(req: NextRequest) {
           data: { userId: uid, type: 'DEPOSIT', amount, description: '입고 취소 (주문확인으로 되돌리기)', date: new Date() },
         });
         await syncUserBalance(uid);
-      }
-      // 재고 복구
-      for (const it of arrivedItems) {
-        if (it.productId && it.color && it.size) {
-          await prisma.productVariant.updateMany({
-            where: { productId: it.productId, color: it.color, size: it.size },
-            data:  { stock: { increment: it.quantity } },
-          });
-        }
       }
     }
 
@@ -193,8 +177,8 @@ export async function PATCH(req: NextRequest) {
   if (action === 'adminCancel') {
     if (!isAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    // 품절 처리로 차단됐던 재고 복구
-    await restoreStockSnapshots(itemIds);
+    // 품절 처리로 표시됐던 품절 플래그 복구
+    await restoreOutOfStockFlags(itemIds);
 
     // 기존에 arrivedAt이 있던 항목 → 출금 취소(입금) 처리
     const arrivedItems = await prisma.orderItem.findMany({
@@ -212,15 +196,6 @@ export async function PATCH(req: NextRequest) {
           data: { userId: uid, type: 'DEPOSIT', amount, description: '관리자 취소 (입고 취소)', date: new Date() },
         });
         await syncUserBalance(uid);
-      }
-      // 재고 복구
-      for (const it of arrivedItems) {
-        if (it.productId && it.color && it.size) {
-          await prisma.productVariant.updateMany({
-            where: { productId: it.productId, color: it.color, size: it.size },
-            data:  { stock: { increment: it.quantity } },
-          });
-        }
       }
     }
 
@@ -316,8 +291,8 @@ export async function PATCH(req: NextRequest) {
   /* ── 입고 처리 (admin) — 다른 상태 초기화 후 arrivedAt 기록 + 자동 출금 ── */
   if (!isAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  // 품절 처리로 차단됐던 재고 복구 (이후 정상 입고 차감 로직이 이어서 적용됨)
-  await restoreStockSnapshots(itemIds);
+  // 품절 처리로 표시됐던 품절 플래그 복구 (실제로 입고되었으므로)
+  await restoreOutOfStockFlags(itemIds);
 
   const date = arrivedAt ? new Date(arrivedAt) : new Date();
 
@@ -351,16 +326,6 @@ export async function PATCH(req: NextRequest) {
       data: { userId: uid, type: 'WITHDRAWAL', amount, description: '주문 상품 입고', date },
     });
     await syncUserBalance(uid);
-  }
-
-  // 색상+사이즈 재고 자동 차감 (새로 입고된 항목만)
-  for (const item of notYetArrived) {
-    if (item.productId && item.color && item.size) {
-      await prisma.productVariant.updateMany({
-        where: { productId: item.productId, color: item.color, size: item.size },
-        data:  { stock: { decrement: item.quantity } },
-      });
-    }
   }
 
   return NextResponse.json({ ok: true, count: itemIds.length });

@@ -54,7 +54,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   delete updateData.wholesalePrice;
   if (updateData.saleValue) updateData.saleValue = Number(updateData.saleValue);
   else if (updateData.saleValue === null || updateData.saleValue === '') updateData.saleValue = null;
-  if (updateData.stock !== undefined) updateData.stock = Number(updateData.stock);
   if (updateData.price !== undefined) updateData.price = Number(updateData.price);
   if (!updateData.categoryId) updateData.categoryId = null;
   if (!updateData.sizeCategoryId) updateData.sizeCategoryId = null;
@@ -89,7 +88,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           productId: params.id,
           color:     v.color,
           size:      v.size,
-          stock:     Number(v.stock ?? 0),
+          isOutOfStock: Boolean(v.isOutOfStock),
         })),
       });
     }

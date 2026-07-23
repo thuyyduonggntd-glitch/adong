@@ -100,7 +100,6 @@
   "product.sizeSelectHint": "아래를 선택하여 주문하여 주십시요.",
   "product.color": "색상",
   "product.outOfStock": "품절",
-  "product.stock": "재고: {{count}}개",
   "product.quantity": "수량",
   "product.selectSizeColorAlert": "사이즈와 색상을 선택해주세요.",
   "product.outOfStockAlert": "품절된 상품입니다.",

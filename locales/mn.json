@@ -100,7 +100,6 @@
   "product.sizeSelectHint": "Захиалахын тулд доороос сонгоно уу.",
   "product.color": "Өнгө",
   "product.outOfStock": "Дууссан",
-  "product.stock": "Үлдэгдэл: {{count}}",
   "product.quantity": "Тоо ширхэг",
   "product.selectSizeColorAlert": "Хэмжээ болон өнгийг сонгоно уу.",
   "product.outOfStockAlert": "Энэ бараа дууссан байна.",

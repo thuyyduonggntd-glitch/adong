@@ -28,6 +28,9 @@ export default function AdminSidebar() {
     : menu;
   const homeHref = isSubAdmin ? '/admin/orders' : '/admin/dashboard';
 
+  const [open, setOpen] = useState(false);
+  useEffect(() => { setOpen(false); }, [pathname]);
+
   const [cancelCount, setCancelCount]   = useState(0);
   const [qnaCount, setQnaCount]         = useState(0);
   const [newUserCount, setNewUserCount] = useState(0);
@@ -55,37 +58,62 @@ export default function AdminSidebar() {
   }, [pathname, isSubAdmin]);
 
   return (
-    <aside className="w-64 min-h-screen bg-primary-900 text-white flex flex-col">
-      <div className="p-6 border-b border-primary-700">
-        <Link href={homeHref} className="text-xl font-bold text-primary-200">꿈비샵 관리자</Link>
-        <p className="text-primary-400 text-xs mt-1">Admin Panel</p>
+    <>
+      {/* 모바일 상단바 — 햄버거로 사이드바 열기 */}
+      <div className="md:hidden sticky top-0 z-30 flex items-center justify-between bg-primary-900 text-white px-4 py-3">
+        <button onClick={() => setOpen(true)} aria-label="메뉴 열기" className="p-1 text-primary-200">
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        <Link href={homeHref} className="text-base font-bold text-primary-200">꿈비샵 관리자</Link>
+        <div className="w-6 h-6" />
       </div>
 
-      <nav className="flex-1 p-4 space-y-1">
-        {visibleMenu.map((item) => {
-          const active = pathname.startsWith(item.href);
-          const count = item.badge === 'cancelCount' ? cancelCount : item.badge === 'qnaCount' ? qnaCount : item.badge === 'newUserCount' ? newUserCount : 0;
-          return (
-            <Link key={item.href} href={item.href}
-              className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${active ? 'bg-primary-600 text-white' : 'text-primary-300 hover:bg-primary-700 hover:text-white'}`}>
-              <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
-              </svg>
-              <span className="flex-1">{item.label}</span>
-              {count > 0 && (
-                <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center leading-tight">
-                  {count > 99 ? '99+' : count}
-                </span>
-              )}
-            </Link>
-          );
-        })}
-      </nav>
+      {/* 모바일 배경 오버레이 — 누르면 닫힘 */}
+      {open && (
+        <div className="md:hidden fixed inset-0 bg-black/40 z-40" onClick={() => setOpen(false)} />
+      )}
 
-      <div className="p-4 border-t border-primary-700 space-y-2">
-        <Link href="/home" className="flex items-center gap-2 px-4 py-2 text-xs text-primary-400 hover:text-primary-200">← 쇼핑몰로 이동</Link>
-        <button onClick={() => signOut({ callbackUrl: '/login' })} className="w-full text-left px-4 py-2 text-xs text-red-400 hover:text-red-300">로그아웃</button>
-      </div>
-    </aside>
+      <aside className={`fixed md:static inset-y-0 left-0 z-50 w-64 min-h-screen bg-primary-900 text-white flex flex-col transform transition-transform duration-200 ease-in-out md:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="p-6 border-b border-primary-700 flex items-center justify-between">
+          <div>
+            <Link href={homeHref} className="text-xl font-bold text-primary-200">꿈비샵 관리자</Link>
+            <p className="text-primary-400 text-xs mt-1">Admin Panel</p>
+          </div>
+          <button onClick={() => setOpen(false)} aria-label="메뉴 닫기" className="md:hidden p-1 text-primary-300 hover:text-white">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+          {visibleMenu.map((item) => {
+            const active = pathname.startsWith(item.href);
+            const count = item.badge === 'cancelCount' ? cancelCount : item.badge === 'qnaCount' ? qnaCount : item.badge === 'newUserCount' ? newUserCount : 0;
+            return (
+              <Link key={item.href} href={item.href}
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${active ? 'bg-primary-600 text-white' : 'text-primary-300 hover:bg-primary-700 hover:text-white'}`}>
+                <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
+                </svg>
+                <span className="flex-1">{item.label}</span>
+                {count > 0 && (
+                  <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center leading-tight">
+                    {count > 99 ? '99+' : count}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="p-4 border-t border-primary-700 space-y-2">
+          <Link href="/home" className="flex items-center gap-2 px-4 py-2 text-xs text-primary-400 hover:text-primary-200">← 쇼핑몰로 이동</Link>
+          <button onClick={() => signOut({ callbackUrl: '/login' })} className="w-full text-left px-4 py-2 text-xs text-red-400 hover:text-red-300">로그아웃</button>
+        </div>
+      </aside>
+    </>
   );
 }

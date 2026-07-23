@@ -100,7 +100,6 @@
   "product.sizeSelectHint": "Selecciona una opción a continuación para hacer tu pedido.",
   "product.color": "Color",
   "product.outOfStock": "Agotado",
-  "product.stock": "Stock: {{count}}",
   "product.quantity": "Cantidad",
   "product.selectSizeColorAlert": "Selecciona una talla y un color.",
   "product.outOfStockAlert": "Este producto está agotado.",

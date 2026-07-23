@@ -223,9 +223,9 @@ export async function POST() {
           remark: p.remark || null,
         };
 
-        // 5) 색상별 사이즈:수량 → variant 목록 (색상마다 사이즈 구성/수량이 달라도 그대로 반영됨)
+        // 5) 색상별 사이즈:수량 → variant 목록 (수량은 저장하지 않고 0 이하만 품절로 반영)
         const variantList = p.colorRows.flatMap((cr) =>
-          cr.sizeQty.map((sq) => ({ color: cr.color, size: sq.size, stock: sq.stock }))
+          cr.sizeQty.map((sq) => ({ color: cr.color, size: sq.size, isOutOfStock: sq.stock <= 0 }))
         );
 
         // 6) productNumber 기준 중복 방지 (upsert 대신 조회 후 분기 — productNumber에 unique 제약이 없음)
@@ -247,7 +247,6 @@ export async function POST() {
           await prisma.product.create({
             data: {
               ...data,
-              stock: 0,
               prices: gradePrices.length > 0 ? { create: gradePrices } : undefined,
               variants: variantList.length > 0 ? { create: variantList } : undefined,
               colorImages: colorImageList.length > 0 ? { create: colorImageList } : undefined,

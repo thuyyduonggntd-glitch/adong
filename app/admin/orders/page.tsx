@@ -688,139 +688,189 @@ function makeToggleAll(ids: string[], selected: Set<string>, setSelected: React.
   };
 }
 
-/* ── 브랜드별 신규접수 뷰 (아코디언) ── */
-function BrandOrderView({ rows }: { rows: FlatRow[] }) {
-  const [openBrand, setOpenBrand] = useState<string | null>(null);
+/* ── 브랜드 1개의 아코디언 행 (헤더 + 펼치면 나오는 주문 상세 테이블) — 브랜드별/쇼핑몰별 뷰 공용 ── */
+function BrandAccordionRow({ brand, items, isOpen, onToggle }: { brand: string; items: FlatRow[]; isOpen: boolean; onToggle: () => void }) {
   const [openGroupKey, setOpenGroupKey] = useState<string | null>(null);
+  const totalQty = items.reduce((s, r) => s + r.quantity, 0);
 
-  const brandGroups = useMemo(() => {
+  // 같은 상품(productId)+사이즈+컬러인 주문건을 한 줄로 통합, 수량은 합산
+  const productGroups = useMemo(() => {
     const map = new Map<string, FlatRow[]>();
-    rows.forEach((r) => {
-      const list = map.get(r.brand) ?? [];
+    items.forEach((r) => {
+      const key = `${r.product.id}::${r.size}::${r.color}`;
+      const list = map.get(key) ?? [];
       list.push(r);
-      map.set(r.brand, list);
+      map.set(key, list);
     });
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b, 'ko'));
-  }, [rows]);
+    return Array.from(map.entries()).map(([key, groupItems]) => ({
+      key,
+      product: groupItems[0].product,
+      size: groupItems[0].size,
+      color: groupItems[0].color,
+      quantity: groupItems.reduce((s, r) => s + r.quantity, 0),
+      items: groupItems,
+    }));
+  }, [items]);
+
+  return (
+    <div className="card overflow-hidden">
+      <button
+        onClick={onToggle}
+        className={`w-full flex items-center justify-between px-5 py-4 text-left transition-colors ${isOpen ? 'bg-primary-50' : 'hover:bg-slate-50'}`}
+      >
+        <div className="flex items-center gap-3">
+          <span className={`text-sm font-bold ${isOpen ? 'text-primary-700' : 'text-slate-800'}`}>{brand}</span>
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isOpen ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+            상품 {items.length}종
+          </span>
+          <span className="text-xs text-slate-400">총 수량 {totalQty}</span>
+        </div>
+        <svg
+          className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+          fill="none" stroke="currentColor" viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div className="border-t border-slate-100">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
+              <tr>
+                <th className="px-4 py-2.5 text-left">상품명</th>
+                <th className="px-4 py-2.5 text-left">사이즈</th>
+                <th className="px-4 py-2.5 text-left">컬러</th>
+                <th className="px-4 py-2.5 text-center">수량</th>
+                <th className="px-4 py-2.5 text-left">주문 건수</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {productGroups.map((g) => {
+                const isGroupOpen = openGroupKey === g.key;
+                const noteCount = g.items.filter((i) => i.note).length;
+                return (
+                  <Fragment key={g.key}>
+                    <tr
+                      onClick={() => setOpenGroupKey(isGroupOpen ? null : g.key)}
+                      className="hover:bg-slate-50 transition-colors cursor-pointer"
+                    >
+                      <td className="px-4 py-2.5 font-medium text-slate-800 max-w-[200px]">
+                        <span className="flex items-center gap-1.5">
+                          <span className="truncate">{g.product.name}</span>
+                          {noteCount > 0 && (
+                            <span
+                              title={`요청사항 있는 주문 ${noteCount}건`}
+                              className="flex-shrink-0 inline-flex items-center justify-center min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full"
+                            >
+                              {noteCount}
+                            </span>
+                          )}
+                        </span>
+                        {g.product.productNumber && <span className="block text-xs text-slate-400 font-mono">{g.product.productNumber}</span>}
+                      </td>
+                      <td className="px-4 py-2.5 text-xs text-slate-600">{g.size || '-'}</td>
+                      <td className="px-4 py-2.5 text-xs text-slate-600">{g.color || '-'}</td>
+                      <td className="px-4 py-2.5 text-center font-semibold text-slate-800">{g.quantity}</td>
+                      <td className="px-4 py-2.5 text-xs text-slate-500">
+                        <span className="inline-flex items-center gap-1">
+                          {g.items.length}건
+                          <svg
+                            className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${isGroupOpen ? 'rotate-180' : ''}`}
+                            fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </span>
+                      </td>
+                    </tr>
+                    {isGroupOpen && g.items.map((r) => (
+                      <tr key={r.rowKey} className="bg-slate-50/60 text-xs text-slate-500">
+                        <td className="px-4 py-2 pl-8" colSpan={3}>
+                          {r.userName}
+                          <span className="ml-1.5 text-slate-400 font-mono">#{r.orderId.slice(-6).toUpperCase()}</span>
+                          {r.note && (
+                            <span className="ml-1.5 text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[10px] leading-tight">
+                              {r.note}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2 text-center font-medium text-slate-600">{r.quantity}</td>
+                        <td className="px-4 py-2" />
+                      </tr>
+                    ))}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+            <tfoot className="border-t border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700">
+              <tr>
+                <td colSpan={3} className="px-4 py-2">합계</td>
+                <td className="px-4 py-2 text-center">{totalQty}</td>
+                <td className="px-4 py-2" />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── 쇼핑몰별 신규접수 뷰 — 쇼핑몰은 라벨(클릭 불필요), 그 아래 브랜드 목록이 바로 보이고 브랜드를 누르면 주문 상세가 펼쳐짐 ── */
+function MallOrderView({ rows, brandMallMap }: { rows: FlatRow[]; brandMallMap: Record<string, string> }) {
+  const [openBrand, setOpenBrand] = useState<string | null>(null);
+  const UNASSIGNED = '미분류';
+
+  const mallGroups = useMemo(() => {
+    const byBrand = new Map<string, FlatRow[]>();
+    rows.forEach((r) => {
+      const list = byBrand.get(r.brand) ?? [];
+      list.push(r);
+      byBrand.set(r.brand, list);
+    });
+
+    const byMall = new Map<string, Array<[string, FlatRow[]]>>();
+    Array.from(byBrand.entries()).forEach(([brand, items]) => {
+      const mall = brandMallMap[brand] || UNASSIGNED;
+      const list = byMall.get(mall) ?? [];
+      list.push([brand, items]);
+      byMall.set(mall, list);
+    });
+
+    const entries = Array.from(byMall.entries()).map(
+      ([mall, brands]) => [mall, brands.sort((a, b) => a[0].localeCompare(b[0], 'ko'))] as [string, Array<[string, FlatRow[]]>]
+    );
+    entries.sort(([a], [b]) => {
+      if (a === UNASSIGNED) return 1;
+      if (b === UNASSIGNED) return -1;
+      return a.localeCompare(b, 'ko');
+    });
+    return entries;
+  }, [rows, brandMallMap]);
 
   if (rows.length === 0)
     return <div className="text-center py-12 text-slate-400">신규 접수 주문이 없습니다.</div>;
 
   return (
-    <div className="space-y-2">
-      {brandGroups.map(([brand, items]) => {
-        const totalQty = items.reduce((s, r) => s + r.quantity, 0);
-        const isOpen = openBrand === brand;
-
-        // 같은 상품(productId)+사이즈+컬러인 주문건을 한 줄로 통합, 수량은 합산
-        const productGroups = (() => {
-          const map = new Map<string, FlatRow[]>();
-          items.forEach((r) => {
-            const key = `${r.product.id}::${r.size}::${r.color}`;
-            const list = map.get(key) ?? [];
-            list.push(r);
-            map.set(key, list);
-          });
-          return Array.from(map.entries()).map(([key, groupItems]) => ({
-            key,
-            product: groupItems[0].product,
-            size: groupItems[0].size,
-            color: groupItems[0].color,
-            quantity: groupItems.reduce((s, r) => s + r.quantity, 0),
-            items: groupItems,
-          }));
-        })();
-
+    <div className="space-y-5">
+      {mallGroups.map(([mall, brands]) => {
+        const mallQty = brands.reduce((s, [, items]) => s + items.reduce((s2, r) => s2 + r.quantity, 0), 0);
         return (
-          <div key={brand} className="card overflow-hidden">
-            <button
-              onClick={() => setOpenBrand(isOpen ? null : brand)}
-              className={`w-full flex items-center justify-between px-5 py-4 text-left transition-colors ${isOpen ? 'bg-primary-50' : 'hover:bg-slate-50'}`}
-            >
-              <div className="flex items-center gap-3">
-                <span className={`text-sm font-bold ${isOpen ? 'text-primary-700' : 'text-slate-800'}`}>{brand}</span>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isOpen ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                  상품 {items.length}종
-                </span>
-                <span className="text-xs text-slate-400">총 수량 {totalQty}</span>
-              </div>
-              <svg
-                className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
-                fill="none" stroke="currentColor" viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {isOpen && (
-              <div className="border-t border-slate-100">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
-                    <tr>
-                      <th className="px-4 py-2.5 text-left">상품명</th>
-                      <th className="px-4 py-2.5 text-left">사이즈</th>
-                      <th className="px-4 py-2.5 text-left">컬러</th>
-                      <th className="px-4 py-2.5 text-center">수량</th>
-                      <th className="px-4 py-2.5 text-left">주문 건수</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {productGroups.map((g) => {
-                      const isGroupOpen = openGroupKey === `${brand}::${g.key}`;
-                      return (
-                        <Fragment key={g.key}>
-                          <tr
-                            onClick={() => setOpenGroupKey(isGroupOpen ? null : `${brand}::${g.key}`)}
-                            className="hover:bg-slate-50 transition-colors cursor-pointer"
-                          >
-                            <td className="px-4 py-2.5 font-medium text-slate-800 max-w-[200px]">
-                              <span className="block truncate">{g.product.name}</span>
-                              {g.product.productNumber && <span className="block text-xs text-slate-400 font-mono">{g.product.productNumber}</span>}
-                            </td>
-                            <td className="px-4 py-2.5 text-xs text-slate-600">{g.size || '-'}</td>
-                            <td className="px-4 py-2.5 text-xs text-slate-600">{g.color || '-'}</td>
-                            <td className="px-4 py-2.5 text-center font-semibold text-slate-800">{g.quantity}</td>
-                            <td className="px-4 py-2.5 text-xs text-slate-500">
-                              <span className="inline-flex items-center gap-1">
-                                {g.items.length}건
-                                <svg
-                                  className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${isGroupOpen ? 'rotate-180' : ''}`}
-                                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                                >
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                </svg>
-                              </span>
-                            </td>
-                          </tr>
-                          {isGroupOpen && g.items.map((r) => (
-                            <tr key={r.rowKey} className="bg-slate-50/60 text-xs text-slate-500">
-                              <td className="px-4 py-2 pl-8" colSpan={3}>
-                                {r.userName}
-                                <span className="ml-1.5 text-slate-400 font-mono">#{r.orderId.slice(-6).toUpperCase()}</span>
-                                {r.note && (
-                                  <span className="ml-1.5 text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[10px] leading-tight">
-                                    {r.note}
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-4 py-2 text-center font-medium text-slate-600">{r.quantity}</td>
-                              <td className="px-4 py-2" />
-                            </tr>
-                          ))}
-                        </Fragment>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot className="border-t border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700">
-                    <tr>
-                      <td colSpan={3} className="px-4 py-2">합계</td>
-                      <td className="px-4 py-2 text-center">{totalQty}</td>
-                      <td className="px-4 py-2" />
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
+          <div key={mall}>
+            <div className="flex items-center gap-2 mb-2 px-1">
+              <span className="text-sm font-bold text-slate-700">🏬 {mall}</span>
+              <span className="text-xs text-slate-400">브랜드 {brands.length}개 · 총 수량 {mallQty}</span>
+            </div>
+            <div className="space-y-2">
+              {brands.map(([brand, items]) => (
+                <BrandAccordionRow
+                  key={brand} brand={brand} items={items}
+                  isOpen={openBrand === brand}
+                  onToggle={() => setOpenBrand(openBrand === brand ? null : brand)}
+                />
+              ))}
+            </div>
           </div>
         );
       })}
@@ -859,7 +909,8 @@ export default function AdminOrdersPage() {
     cancelFrom: '' as string,
     cancelTo: '' as string,
   });
-  const [pendingViewMode, setPendingViewMode] = useState<'전체' | '브랜드별'>('브랜드별');
+  const [pendingViewMode, setPendingViewMode] = useState<'전체' | '쇼핑몰별'>('쇼핑몰별');
+  const [brandMallMap, setBrandMallMap] = useState<Record<string, string>>({});
 
   // 품절/미송 비고 모달
   const [remarkModal, setRemarkModal] = useState<{ action: 'outOfStock' | 'unshipped'; itemIds: string[] } | null>(null);
@@ -876,6 +927,12 @@ export default function AdminOrdersPage() {
       setOutStockUnshippedItems(Array.isArray(d.outOfStockUnshippedItems) ? d.outOfStockUnshippedItems : []);
       setAllArrivedOrderItems(Array.isArray(d.allArrivedOrderItems) ? d.allArrivedOrderItems : []);
       setLoading(false);
+    });
+    fetch('/api/brands').then((r) => r.json()).then((d) => {
+      if (!Array.isArray(d)) return;
+      const map: Record<string, string> = {};
+      d.forEach((b: any) => { if (b.mallLocation) map[b.name] = b.mallLocation; });
+      setBrandMallMap(map);
     });
   }, []);
 
@@ -1289,7 +1346,7 @@ export default function AdminOrdersPage() {
               <div className="flex items-center gap-3 mb-4 flex-wrap">
                 <input className="input max-w-xs text-sm" placeholder="아이디, 브랜드, 상품명..." value={search} onChange={(e) => setSearch(e.target.value)} />
                 <div className="flex bg-slate-100 rounded-lg p-1 gap-1">
-                  {(['브랜드별', '전체'] as const).map((mode) => (
+                  {(['쇼핑몰별', '전체'] as const).map((mode) => (
                     <button
                       key={mode}
                       onClick={() => setPendingViewMode(mode)}
@@ -1300,8 +1357,8 @@ export default function AdminOrdersPage() {
                   ))}
                 </div>
               </div>
-              {pendingViewMode === '브랜드별' ? (
-                <BrandOrderView rows={filteredPending} />
+              {pendingViewMode === '쇼핑몰별' ? (
+                <MallOrderView rows={filteredPending} brandMallMap={brandMallMap} />
               ) : (
                 <>
                   <QueuePagination page={pendingPage} totalPages={totalPendingPages} onChange={setPendingPage}

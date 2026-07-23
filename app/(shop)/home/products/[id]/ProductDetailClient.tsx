@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { localizeCategoryName } from '@/lib/productLocale';
 import { resolveColorImage } from '@/lib/productImages';
+import { noDownloadProps } from '@/lib/imageProtection';
 
 const PLACEHOLDER_IMG = 'https://placehold.co/600x600/EFF6FF/2563EB?text=상품';
 
@@ -31,8 +32,6 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
   // 화면에 보여줄 텍스트만 번역본으로 교체한다.
   const localizedName        = product[`name_${lang}`] || product.name;
   const localizedDescription = product[`description_${lang}`] || product.description;
-  const localizedMaterial    = product[`material_${lang}`] || product.material;
-  const localizedGender      = product[`gender_${lang}`] || product.gender;
   const localizedSeason      = product[`season_${lang}`] || product.season;
   const localizedColors: string[] = (product[`colors_${lang}`]?.length ? product[`colors_${lang}`] : product.colors) ?? [];
   const localizedCategoryName = localizeCategoryName(product.category, lang);
@@ -116,11 +115,20 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
         {/* 이미지 */}
         <div className="space-y-3">
           <div className="relative aspect-square bg-primary-50 rounded-2xl overflow-hidden">
-            <Image src={mainImg} alt={localizedName} fill className="object-cover" />
-            {session && product.isOnSale && (
-              <span className="absolute top-3 left-3 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-md">
-                {getSaleLabel(product.saleType, product.saleValue, t('common.discount'))}
-              </span>
+            <Image src={mainImg} alt={localizedName} fill className="object-cover" {...noDownloadProps(!session)} />
+            {session && (product.isOnSale || product.isCarryOver) && (
+              <div className="absolute top-3 left-3 flex gap-1.5">
+                {product.isOnSale && (
+                  <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-md">
+                    {getSaleLabel(product.saleType, product.saleValue, t('common.discount'))}
+                  </span>
+                )}
+                {product.isCarryOver && (
+                  <span className="bg-amber-500 text-white text-xs font-bold px-2 py-1 rounded-md">
+                    {t('product.carryoverBadge')}
+                  </span>
+                )}
+              </div>
             )}
             {hasBackorder && (
               <span className="absolute top-3 right-3 bg-purple-600 text-white text-xs font-bold px-2 py-1 rounded-md">
@@ -134,7 +142,7 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
                 <button key={`color-${ci.color}`} onClick={() => { setSelectedColor(ci.color); setMainImg(ci.imageUrl); }}
                   title={ci.color}
                   className={`relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border-2 transition-colors ${mainImg === ci.imageUrl ? 'border-primary-500' : 'border-slate-100 hover:border-primary-400'}`}>
-                  <Image src={ci.imageUrl} alt={ci.color} fill className="object-cover" />
+                  <Image src={ci.imageUrl} alt={ci.color} fill className="object-cover" {...noDownloadProps(!session)} />
                 </button>
               ))}
               {(product.colorImages?.length ?? 0) > 0 && (product.sizeImages?.length ?? 0) > 0 && (
@@ -142,7 +150,7 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
               )}
               {(product.sizeImages ?? []).map((img: string, i: number) => (
                 <div key={`size-${i}`} className="relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border-2 border-slate-100">
-                  <Image src={img} alt="" fill className="object-cover" />
+                  <Image src={img} alt="" fill className="object-cover" {...noDownloadProps(!session)} />
                 </div>
               ))}
             </div>
@@ -175,12 +183,6 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
               <Link href={`/home/products?season=${encodeURIComponent(product.season)}`}
                 className="badge bg-amber-100 text-amber-700 text-xs hover:bg-amber-200 transition-colors cursor-pointer">
                 {localizedSeason}
-              </Link>
-            )}
-            {product.productType && (
-              <Link href={`/home/products?productType=${encodeURIComponent(product.productType)}`}
-                className="badge bg-violet-100 text-violet-700 text-xs hover:bg-violet-200 transition-colors cursor-pointer">
-                {product.productType}
               </Link>
             )}
           </div>
@@ -225,68 +227,18 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
           </div>
 
           {/* 상품 정보 테이블 */}
-          <div className="mb-5 rounded-xl border border-slate-100 overflow-hidden">
-            <table className="w-full text-sm">
-              <tbody className="divide-y divide-slate-50">
-                {product.brand && (
+          {product.description && (
+            <div className="mb-5 rounded-xl border border-slate-100 overflow-hidden">
+              <table className="w-full text-sm">
+                <tbody className="divide-y divide-slate-50">
                   <tr className="bg-slate-50/50">
-                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500 w-28">{t('product.maker')}</td>
-                    <td className="px-4 py-2.5 text-slate-700">{product.brand}{product.season ? ` (${localizedSeason})` : ''}</td>
-                  </tr>
-                )}
-                {product.productNumber && (
-                  <tr>
-                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">{t('product.productNumber')}</td>
-                    <td className="px-4 py-2.5 text-slate-700 font-mono text-xs">{product.productNumber}</td>
-                  </tr>
-                )}
-                {(product.material || product.gender) && (
-                  <tr className="bg-slate-50/50">
-                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">{t('product.materialGender')}</td>
-                    <td className="px-4 py-2.5 text-slate-700">
-                      {[localizedMaterial, localizedGender].filter(Boolean).join(' / ')}
-                    </td>
-                  </tr>
-                )}
-                {product.sizes?.length > 0 && (
-                  <tr>
-                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">{t('product.sizeCount')}</td>
-                    <td className="px-4 py-2.5 text-slate-700">{t('product.sizeCountValue', { sizes: product.sizes.join('-'), count: product.sizes.length })}</td>
-                  </tr>
-                )}
-                {product.productType && (
-                  <tr className="bg-slate-50/50">
-                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">{t('product.type')}</td>
-                    <td className="px-4 py-2.5">
-                      <Link href={`/home/products?productType=${encodeURIComponent(product.productType)}`}
-                        className="text-violet-700 hover:underline text-sm">
-                        {product.productType}
-                      </Link>
-                    </td>
-                  </tr>
-                )}
-                {session && hasDiscount && (
-                  <tr>
-                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">{t('product.discount')}</td>
-                    <td className="px-4 py-2.5 font-bold text-red-500">
-                      {t('product.discountArrow', { label: getSaleLabel(product.saleType, product.saleValue, t('common.discount')), price: formatPrice(displayPrice) })}
-                      <span className="font-normal text-red-400 ml-1">{t('product.discountSaved', { amount: (basePrice - displayPrice).toLocaleString() })}</span>
-                    </td>
-                  </tr>
-                )}
-                <tr>
-                  <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">{t('product.sizeOrderLabel')}</td>
-                  <td className="px-4 py-2.5 text-slate-700">{t('product.sizeOrderValue')}</td>
-                </tr>
-                {product.description && (
-                  <tr className="bg-slate-50/50">
-                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500">{t('product.notice')}</td>
+                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-500 w-28">{t('product.notice')}</td>
                     <td className="px-4 py-2.5 text-slate-600 text-xs leading-relaxed">{localizedDescription}</td>
                   </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {/* 비고 */}
           {product.remark && (
@@ -444,13 +396,15 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
       )}
 
       {/* ── 상품 이미지 (상세페이지 스타일 — 전체폭, 틈 없이 세로 연결) ── */}
+      {/* 원본 이미지 크기가 상품마다 제각각이라 공통 1:1 박스에 crop해 폭을 통일한다 */}
       {product.images && product.images.length > 0 && (
         <div className="mt-12 border-t border-slate-100 pt-10">
           <h2 className="text-lg font-bold text-slate-800 mb-5">{t('product.productImagesTitle')}</h2>
           <div className="max-w-2xl mx-auto">
             {product.images.map((img: string, i: number) => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img key={i} src={img} alt={`product ${i + 1}`} className="block w-full max-w-full h-auto m-0 p-0 align-top" />
+              <div key={i} className="relative aspect-square w-full">
+                <Image src={img} alt={`product ${i + 1}`} fill className="object-cover" sizes="(max-width: 768px) 100vw, 672px" {...noDownloadProps(!session)} />
+              </div>
             ))}
           </div>
         </div>

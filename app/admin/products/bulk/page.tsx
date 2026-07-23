@@ -22,9 +22,7 @@ type ParsedProduct = {
   saleRate: number;
   salePrice: number;
   season: string;
-  material: string;
   gender: string;
-  productType: string;
   description: string;
   remark: string;
   localImages: LocalImage[];
@@ -43,11 +41,11 @@ type Results  = { created: number; updated: number; skipped: number; errors: str
 async function downloadTemplate() {
   const XLSX = await import('xlsx');
   const headers = ['상품코드','상품명','브랜드','카테고리 분류','카테고리','카테고리 사이즈','색상','사이즈:수량',
-                   '일반가','SILVER가','GOLD가','VIP가','세일률(%)','세일가','시즌','재질','성별','종류','설명','비고'];
+                   '일반가','SILVER가','GOLD가','VIP가','세일률(%)','세일가','시즌','성별','설명','비고'];
   const sample1 = ['A001','상품명예시','브랜드명','의류','아동복','키즈','레드','S:10,M:20,L:5',
-                   '10000','9500','9000','8500','10','9000','여름1차','면','공용','티셔츠','색상 주의',''];
+                   '10000','9500','9000','8500','10','9000','여름1차','공용','색상 주의',''];
   const sample2 = ['A001','','','','','','블루','S:5,M:10',
-                   '','','','','','','','','','','',''];
+                   '','','','','','','','','',''];
   const ws = XLSX.utils.aoa_to_sheet([headers, sample1, sample2]);
   ws['!cols'] = headers.map(() => ({ wch: 16 }));
   const wb = XLSX.utils.book_new();
@@ -98,9 +96,7 @@ async function parseExcel(file: File): Promise<Omit<ParsedProduct, 'localImages'
         saleRate:    Number(row[col('세일률(%)')] || 0),
         salePrice:   Number(row[col('세일가')] || 0),
         season:      g('시즌'),
-        material:    g('재질'),
         gender:      g('성별') || '공용',
-        productType: g('종류'),
         description: g('설명'),
         remark:      g('비고'),
       };
@@ -134,9 +130,7 @@ async function parseExcel(file: File): Promise<Omit<ParsedProduct, 'localImages'
       saleRate:         first.saleRate,
       salePrice:        first.salePrice,
       season:           first.season,
-      material:         first.material,
       gender:           first.gender,
-      productType:      first.productType,
       description:      first.description,
       remark:           first.remark,
     };

@@ -76,7 +76,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     where: { id: params.id },
     select: {
       isOnSale: true, isCarryOver: true,
-      name: true, description: true, material: true, gender: true, season: true, colors: true,
+      name: true, description: true, gender: true, season: true, colors: true,
     },
   });
 

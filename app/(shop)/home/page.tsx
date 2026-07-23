@@ -21,8 +21,10 @@ async function getTopBrandsUncached() {
     LIMIT 10
   `;
   const topNames = rows.map((r) => r.brand);
-  if (topNames.length === 0) return prisma.brand.findMany({ take: 10, orderBy: { name: 'asc' } });
-  const details = await prisma.brand.findMany({ where: { name: { in: topNames } } });
+  // mallLocation(도매처 위치)은 어드민 전용 메모라 회원 화면(홈 브랜드 섹션)에는 절대 포함하지 않는다.
+  const topBrandSelect = { id: true, name: true, image: true } as const;
+  if (topNames.length === 0) return prisma.brand.findMany({ take: 10, orderBy: { name: 'asc' }, select: topBrandSelect });
+  const details = await prisma.brand.findMany({ where: { name: { in: topNames } }, select: topBrandSelect });
   return topNames.map((n) => details.find((b) => b.name === n)).filter((b): b is NonNullable<typeof b> => b != null);
 }
 
@@ -39,7 +41,9 @@ const getAllBrands = unstable_cache(
 const HOME_PRODUCT_SELECT = {
   id: true, name: true,
   name_en: true, name_vi: true, name_th: true, name_ru: true, name_mn: true, name_es: true,
-  images: true, price: true, isOnSale: true, saleType: true, saleValue: true, updatedAt: true,
+  images: true, price: true, isOnSale: true, saleType: true, saleValue: true, isCarryOver: true, updatedAt: true,
+  brand: true, sizes: true,
+  season: true, season_en: true, season_vi: true, season_th: true, season_ru: true, season_mn: true, season_es: true,
   category: {
     select: {
       name: true,

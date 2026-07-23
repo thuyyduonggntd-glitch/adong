@@ -31,24 +31,23 @@ async function translateBatch(texts: string[], target: TranslateTargetLang): Pro
 export type ProductTranslatableFields = {
   name: string;
   description: string;
-  material: string | null;
   gender: string | null;
   season: string | null;
   colors: string[];
 };
 
 export type ProductTranslationResult = Partial<Record<
-  `name_${TranslateTargetLang}` | `description_${TranslateTargetLang}` | `material_${TranslateTargetLang}` | `gender_${TranslateTargetLang}` | `season_${TranslateTargetLang}`,
+  `name_${TranslateTargetLang}` | `description_${TranslateTargetLang}` | `gender_${TranslateTargetLang}` | `season_${TranslateTargetLang}`,
   string
 >> & Partial<Record<`colors_${TranslateTargetLang}`, string[]>>;
 
 /** 상품의 번역 대상 필드를 6개 언어로 번역. 언어별로 1번씩만 API 호출 (필드+색상 배열을 한 번에 묶어서 전송) */
 export async function translateProductFields(fields: ProductTranslatableFields): Promise<ProductTranslationResult> {
-  const { name, description, material, gender, season, colors } = fields;
+  const { name, description, gender, season, colors } = fields;
   const colorsCount = colors.length;
 
-  // 순서 고정: [name, description, material, gender, season, ...colors]
-  const source = [name, description, material ?? '', gender ?? '', season ?? '', ...colors];
+  // 순서 고정: [name, description, gender, season, ...colors]
+  const source = [name, description, gender ?? '', season ?? '', ...colors];
 
   const result: ProductTranslationResult = {};
 
@@ -58,10 +57,9 @@ export async function translateProductFields(fields: ProductTranslatableFields):
         const translated = await translateBatch(source, lang);
         result[`name_${lang}`] = translated[0] || name;
         result[`description_${lang}`] = translated[1] || description;
-        result[`material_${lang}`] = material ? (translated[2] || material) : undefined;
-        result[`gender_${lang}`] = gender ? (translated[3] || gender) : undefined;
-        result[`season_${lang}`] = season ? (translated[4] || season) : undefined;
-        result[`colors_${lang}`] = colorsCount > 0 ? translated.slice(5, 5 + colorsCount) : [];
+        result[`gender_${lang}`] = gender ? (translated[2] || gender) : undefined;
+        result[`season_${lang}`] = season ? (translated[3] || season) : undefined;
+        result[`colors_${lang}`] = colorsCount > 0 ? translated.slice(4, 4 + colorsCount) : [];
       } catch (err) {
         // 번역 실패해도 저장 자체는 막지 않음 — 조용히 건너뛰고 한국어 원본으로 폴백
         console.error(`[translate] failed for lang=${lang}:`, err);
@@ -76,7 +74,7 @@ export async function translateProductFields(fields: ProductTranslatableFields):
 export async function translateAndSaveProduct(productId: string): Promise<void> {
   const product = await prisma.product.findUnique({
     where: { id: productId },
-    select: { name: true, description: true, material: true, gender: true, season: true, colors: true },
+    select: { name: true, description: true, gender: true, season: true, colors: true },
   });
   if (!product) return;
 
@@ -110,6 +108,27 @@ export async function translateAndSaveCategory(categoryId: string): Promise<void
   });
 }
 
+/** 검색어 등 임의 텍스트를 한국어로 번역 (소스 언어 자동감지). 실패/미설정 시 null — 호출부는 원본 검색어만으로 폴백해야 함 */
+export async function translateTextToKorean(text: string): Promise<string | null> {
+  const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY;
+  if (!apiKey || !text.trim()) return null;
+
+  try {
+    const res = await fetch(`https://translation.googleapis.com/language/translate/v2?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: text, target: 'ko', format: 'text' }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const translated = data?.data?.translations?.[0]?.translatedText as string | undefined;
+    return translated || null;
+  } catch (err) {
+    console.error('[translate] query->ko failed:', err);
+    return null;
+  }
+}
+
 /** 수동 공지(MANUAL)의 제목+내용을 6개 언어로 번역 (2개 필드를 한 번에 묶어서 언어당 1회 호출) */
 export async function translateAndSaveNotice(noticeId: string): Promise<void> {
   const notice = await prisma.notice.findUnique({ where: { id: noticeId }, select: { title: true, content: true } });
@@ -140,7 +159,6 @@ export function productSourceChanged(
 ): boolean {
   if (after.name !== undefined && after.name !== before.name) return true;
   if (after.description !== undefined && after.description !== before.description) return true;
-  if (after.material !== undefined && after.material !== before.material) return true;
   if (after.gender !== undefined && after.gender !== before.gender) return true;
   if (after.season !== undefined && after.season !== before.season) return true;
   if (after.colors !== undefined && JSON.stringify(after.colors) !== JSON.stringify(before.colors)) return true;

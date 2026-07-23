@@ -7,6 +7,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { localizeProduct, localizeCategoryName } from '@/lib/productLocale';
+import { noDownloadProps } from '@/lib/imageProtection';
 
 interface Props {
   product: {
@@ -14,9 +15,13 @@ interface Props {
     name: string;
     images: string[];
     category: { name: string } | null;
+    brand?: string | null;
+    season?: string | null;
+    sizes?: string[];
     isOnSale?: boolean;
     saleType?: string | null;
     saleValue?: number | null;
+    isCarryOver?: boolean;
     myGradePrice?: number;
     myFinalPrice?: number;
     price?: number;
@@ -69,6 +74,7 @@ export default function ProductCard({ product: rawProduct, isWishlisted = false,
           fill
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
           className="object-cover group-hover:scale-105 transition-transform duration-300"
+          {...noDownloadProps(!session)}
         />
         <button onClick={handleWishlist} disabled={toggling} className="absolute top-2 right-2 p-1.5 bg-white rounded-full shadow-sm disabled:opacity-60" aria-label={t('nav.wishlistFull')}>
           <svg className={`w-5 h-5 transition-colors ${wishlisted ? 'fill-red-500 text-red-500' : 'fill-none text-slate-400'}`}
@@ -76,18 +82,44 @@ export default function ProductCard({ product: rawProduct, isWishlisted = false,
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
           </svg>
         </button>
-        {session && product.isOnSale && (
-          <span className="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-md">
-            {getSaleLabel(product.saleType ?? null, product.saleValue ?? null, t('common.discount'))}
-          </span>
+        {session && (product.isOnSale || product.isCarryOver) && (
+          <div className="absolute top-2 left-2 flex gap-1">
+            {product.isOnSale && (
+              <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-md">
+                {getSaleLabel(product.saleType ?? null, product.saleValue ?? null, t('common.discount'))}
+              </span>
+            )}
+            {product.isCarryOver && (
+              <span className="bg-amber-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-md">
+                {t('product.carryoverBadge')}
+              </span>
+            )}
+          </div>
         )}
-        {product.category && (
-          <span className="absolute bottom-2 left-2 badge bg-primary-100 text-primary-700 text-xs">
-            {categoryName}
-          </span>
+        {(product.category || product.season || (product.sizes && product.sizes.length > 0)) && (
+          <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-1">
+            {product.category && (
+              <span className="badge bg-primary-100 text-primary-700 text-xs">
+                {categoryName}
+              </span>
+            )}
+            {product.season && (
+              <span className="badge bg-amber-100 text-amber-700 text-xs">
+                {product.season}
+              </span>
+            )}
+            {product.sizes && product.sizes.length > 0 && (
+              <span className="badge bg-slate-100 text-slate-600 text-xs max-w-[100px] truncate">
+                {product.sizes.join('/')}
+              </span>
+            )}
+          </div>
         )}
       </div>
       <div className="p-3">
+        {product.brand && (
+          <p className="text-xs font-semibold text-primary-600 truncate">{product.brand}</p>
+        )}
         <h3 className="text-sm font-medium text-slate-800 line-clamp-2 group-hover:text-primary-600 transition-colors">
           {product.name}
         </h3>

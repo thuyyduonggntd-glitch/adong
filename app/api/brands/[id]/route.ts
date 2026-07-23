@@ -8,7 +8,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!session || (session.user as any)?.role !== 'ADMIN')
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { name, image, notice, sizeInfo, sizeImages, modelInfo, modelImages } = await req.json();
+  const { name, image, notice, sizeInfo, sizeImages, modelInfo, modelImages, mallLocation } = await req.json();
   const data: any = {};
   if (name       !== undefined) data.name        = name.trim();
   if (image      !== undefined) data.image       = image || null;
@@ -17,6 +17,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (sizeImages !== undefined) data.sizeImages  = Array.isArray(sizeImages) ? sizeImages : [];
   if (modelInfo  !== undefined) data.modelInfo   = modelInfo?.trim() || null;
   if (modelImages !== undefined) data.modelImages = Array.isArray(modelImages) ? modelImages : [];
+  if (mallLocation !== undefined) data.mallLocation = mallLocation?.trim() || null;
 
   try {
     const brand = await prisma.brand.update({ where: { id: params.id }, data });

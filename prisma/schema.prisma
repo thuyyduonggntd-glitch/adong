@@ -104,9 +104,7 @@ model Product {
   images         String[]
   brand          String?
   productNumber  String?
-  material       String?
   gender         String?
-  productType    String?
   wholesalePrice Int?
   season         String?
 
@@ -123,12 +121,6 @@ model Product {
   description_ru String?  @db.Text
   description_mn String?  @db.Text
   description_es String?  @db.Text
-  material_en    String?
-  material_vi    String?
-  material_th    String?
-  material_ru    String?
-  material_mn    String?
-  material_es    String?
   gender_en      String?
   gender_vi      String?
   gender_th      String?
@@ -343,6 +335,8 @@ model Brand {
   sizeImages  String[]
   modelInfo   String?  @db.Text
   modelImages String[]
+  // 어드민 전용 메모 — 도매 시장/상가 위치 (회원 화면에는 절대 노출되지 않음)
+  mallLocation String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }

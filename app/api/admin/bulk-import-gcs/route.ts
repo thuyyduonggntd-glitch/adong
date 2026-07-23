@@ -24,7 +24,7 @@ type ParsedRow = {
   categoryGroup: string; categoryName: string; sizeCategoryName: string;
   colorRows: ColorRow[]; colors: string[]; sizes: string[];
   priceRegular: number; priceSilver: number; priceGold: number; priceVip: number;
-  season: string; material: string; gender: string; productType: string;
+  season: string; gender: string;
   description: string; remark: string;
 };
 
@@ -63,9 +63,7 @@ function parseExcel(buf: Buffer): ParsedRow[] {
         priceGold: Number(row[col('GOLD가')] || 0),
         priceVip: Number(row[col('VIP가')] || 0),
         season: g('시즌'),
-        material: g('재질'),
         gender: g('성별') || '공용',
-        productType: g('종류'),
         description: g('설명'),
         remark: g('비고'),
       };
@@ -101,9 +99,7 @@ function parseExcel(buf: Buffer): ParsedRow[] {
       priceGold: first.priceGold,
       priceVip: first.priceVip,
       season: first.season,
-      material: first.material,
       gender: first.gender,
-      productType: first.productType,
       description: first.description,
       remark: first.remark,
     };
@@ -218,9 +214,7 @@ export async function POST() {
           images,
           brand: brand.name,
           productNumber: p.productNumber,
-          material: p.material || null,
           gender: p.gender || null,
-          productType: p.productType || null,
           season: p.season || null,
           categoryId,
           sizeCategoryId,

@@ -19,8 +19,9 @@ const getCachedCategories = unstable_cache(
   ['products-page-categories'],
   { revalidate: 60 }
 );
+// mallLocation(도매처 위치)은 어드민 전용 메모라 회원 화면(브랜드 필터)에는 절대 포함하지 않는다.
 const getCachedBrands = unstable_cache(
-  () => prisma.brand.findMany({ orderBy: { name: 'asc' } }),
+  () => prisma.brand.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true, image: true } }),
   ['products-page-brands'],
   { revalidate: 60 }
 );
@@ -37,27 +38,15 @@ const getCachedSeasons = unstable_cache(
   ['products-page-seasons'],
   { revalidate: 60 }
 );
-const getCachedProductTypes = unstable_cache(
-  (brandFilter: string | undefined) => prisma.product.findMany({
-    where: {
-      isActive: true, productType: { not: null },
-      ...(brandFilter ? { brand: { contains: brandFilter, mode: 'insensitive' } } : {}),
-    },
-    select: { productType: true },
-    distinct: ['productType'],
-    orderBy: { productType: 'asc' },
-  }),
-  ['products-page-productTypes'],
-  { revalidate: 60 }
-);
-
 const PAGE_SIZE = 24;
 
 // 상품 그리드에 실제로 쓰이는 필드만 select — 대량 카탈로그에서 응답 크기를 줄인다.
 const PRODUCTS_LIST_SELECT = {
   id: true, name: true,
   name_en: true, name_vi: true, name_th: true, name_ru: true, name_mn: true, name_es: true,
-  images: true, price: true, isOnSale: true, saleType: true, saleValue: true, updatedAt: true,
+  images: true, price: true, isOnSale: true, saleType: true, saleValue: true, isCarryOver: true, updatedAt: true,
+  brand: true, sizes: true,
+  season: true, season_en: true, season_vi: true, season_th: true, season_ru: true, season_mn: true, season_es: true,
   category: {
     select: {
       name: true,
@@ -70,13 +59,13 @@ const PRODUCTS_LIST_SELECT = {
 interface Props {
   searchParams: {
     category?: string; q?: string; sort?: string; brand?: string;
-    season?: string; productType?: string; isNew?: string; isOnSale?: string;
+    season?: string; isNew?: string; isOnSale?: string;
     isCarryOver?: string; page?: string;
   };
 }
 
 export default async function ProductsPage({ searchParams }: Props) {
-  const { category, q, sort, brand, season, productType, isNew, isOnSale, isCarryOver } = searchParams;
+  const { category, q, sort, brand, season, isNew, isOnSale, isCarryOver } = searchParams;
   const page = Math.max(1, Number(searchParams.page) || 1);
 
   const orderBy =
@@ -87,15 +76,14 @@ export default async function ProductsPage({ searchParams }: Props) {
 
   const productConditions: any[] = [{ isActive: true }];
   if (category) productConditions.push({ OR: [{ category: { slug: category } }, { sizeCategory: { slug: category } }] });
-  if (q)        productConditions.push(buildProductSearchWhere(q));
+  if (q)        productConditions.push(await buildProductSearchWhere(q));
   if (brand)    productConditions.push({ brand: { contains: brand, mode: 'insensitive' } });
   if (season)   productConditions.push({ season: { contains: season, mode: 'insensitive' } });
-  if (productType) productConditions.push({ productType: { contains: productType, mode: 'insensitive' } });
   if (isOnSale === '1')    productConditions.push({ isOnSale: true });
   if (isCarryOver === '1') productConditions.push({ isCarryOver: true });
   if (isNew === '1')       productConditions.push({ createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } });
 
-  const [session, products, totalCount, categories, seasons, productTypes, dbBrands] = await Promise.all([
+  const [session, products, totalCount, categories, seasons, dbBrands] = await Promise.all([
     getServerSession(authOptions),
     prisma.product.findMany({
       where: { AND: productConditions },
@@ -107,7 +95,6 @@ export default async function ProductsPage({ searchParams }: Props) {
     prisma.product.count({ where: { AND: productConditions } }),
     getCachedCategories(),
     getCachedSeasons(brand),
-    getCachedProductTypes(brand),
     getCachedBrands(),
   ]);
 
@@ -125,7 +112,6 @@ export default async function ProductsPage({ searchParams }: Props) {
 
   const currentCategory    = categories.find((c) => c.slug === category);
   const uniqueSeasons      = seasons.map((s) => s.season).filter(Boolean) as string[];
-  const uniqueProductTypes = productTypes.map((p) => p.productType).filter(Boolean) as string[];
 
   const buildPageHref = (p: number) => {
     const params = new URLSearchParams();
@@ -134,7 +120,6 @@ export default async function ProductsPage({ searchParams }: Props) {
     if (sort)         params.set('sort', sort);
     if (brand)        params.set('brand', brand);
     if (season)       params.set('season', season);
-    if (productType)  params.set('productType', productType);
     if (isNew)        params.set('isNew', isNew);
     if (isOnSale)     params.set('isOnSale', isOnSale);
     if (isCarryOver)  params.set('isCarryOver', isCarryOver);
@@ -157,7 +142,6 @@ export default async function ProductsPage({ searchParams }: Props) {
           {category    && <input type="hidden" name="category"    value={category} />}
           {brand       && <input type="hidden" name="brand"       value={brand} />}
           {season      && <input type="hidden" name="season"      value={season} />}
-          {productType && <input type="hidden" name="productType" value={productType} />}
           {isNew       && <input type="hidden" name="isNew"       value={isNew} />}
           {isOnSale    && <input type="hidden" name="isOnSale"    value={isOnSale} />}
           {isCarryOver && <input type="hidden" name="isCarryOver" value={isCarryOver} />}
@@ -171,37 +155,19 @@ export default async function ProductsPage({ searchParams }: Props) {
         <BrandFilterAZ brands={dbBrands} activeBrand={brand} />
       </div>
 
-      {/* 브랜드 선택 시: 종류별·시즌별 필터 */}
+      {/* 브랜드 선택 시: 시즌별 필터 */}
       {brand && (
         <div className="mb-5 pl-3 border-l-2 border-primary-200 space-y-3">
-          {uniqueProductTypes.length > 0 && (
-            <div>
-              <p className="text-xs font-semibold text-slate-500 mb-2"><T k="products.typeFilter" /></p>
-              <div className="flex flex-wrap gap-1.5">
-                <Link href={`/home/products?brand=${encodeURIComponent(brand)}${season ? `&season=${encodeURIComponent(season)}` : ''}`}
-                  className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${!productType ? 'bg-violet-600 text-white border-violet-600' : 'border-slate-200 text-violet-700 hover:border-violet-400'}`}>
-                  <T k="products.all" />
-                </Link>
-                {uniqueProductTypes.map((pt) => (
-                  <Link key={pt} href={`/home/products?brand=${encodeURIComponent(brand)}&productType=${encodeURIComponent(pt)}${season ? `&season=${encodeURIComponent(season)}` : ''}`}
-                    className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${productType === pt ? 'bg-violet-600 text-white border-violet-600' : 'border-slate-200 text-violet-700 hover:border-violet-400'}`}>
-                    {pt}
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
-
           {uniqueSeasons.length > 0 && (
             <div>
               <p className="text-xs font-semibold text-slate-500 mb-2"><T k="products.seasonFilter" /></p>
               <div className="flex flex-wrap gap-1.5">
-                <Link href={`/home/products?brand=${encodeURIComponent(brand)}${productType ? `&productType=${encodeURIComponent(productType)}` : ''}`}
+                <Link href={`/home/products?brand=${encodeURIComponent(brand)}`}
                   className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${!season ? 'bg-amber-500 text-white border-amber-500' : 'border-slate-200 text-amber-700 hover:border-amber-400'}`}>
                   <T k="products.all" />
                 </Link>
                 {uniqueSeasons.map((s) => (
-                  <Link key={s} href={`/home/products?brand=${encodeURIComponent(brand)}&season=${encodeURIComponent(s)}${productType ? `&productType=${encodeURIComponent(productType)}` : ''}`}
+                  <Link key={s} href={`/home/products?brand=${encodeURIComponent(brand)}&season=${encodeURIComponent(s)}`}
                     className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${season === s ? 'bg-amber-500 text-white border-amber-500' : 'border-slate-200 text-amber-700 hover:border-amber-400'}`}>
                     {s}
                   </Link>

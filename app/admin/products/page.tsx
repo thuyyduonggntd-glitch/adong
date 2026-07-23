@@ -10,8 +10,8 @@ type GradePrice = { grade: string; price: number };
 type Product = {
   id: string; name: string; price: number; stock: number; isActive: boolean;
   images: string[]; brand: string | null; productNumber: string | null; season: string | null;
-  isOnSale: boolean; saleType: string | null; saleValue: number | null;
-  gender: string | null; productType: string | null; material: string | null;
+  isOnSale: boolean; saleType: string | null; saleValue: number | null; isCarryOver: boolean;
+  gender: string | null;
   remark: string | null;
   category: { name: string }; sizes: string[]; colors: string[];
   prices: GradePrice[];
@@ -140,6 +140,30 @@ export default function AdminProductsPage() {
     setSelected(new Set());
   };
 
+  const handleBulkCarryOver = async () => {
+    if (!confirm(`선택된 ${selected.size}개 상품을 이월상품으로 적용하시겠습니까?`)) return;
+    const productIds = Array.from(selected);
+    await fetch('/api/products/bulk-carryover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ productIds }),
+    });
+    setProducts((prev) => prev.map((p) => selected.has(p.id) ? { ...p, isCarryOver: true } : p));
+    setSelected(new Set());
+  };
+
+  const handleBulkRemoveCarryOver = async () => {
+    if (!confirm(`선택된 ${selected.size}개 상품의 이월상품을 해제하시겠습니까?`)) return;
+    const productIds = Array.from(selected);
+    await fetch('/api/products/bulk-carryover', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ productIds }),
+    });
+    setProducts((prev) => prev.map((p) => selected.has(p.id) ? { ...p, isCarryOver: false } : p));
+    setSelected(new Set());
+  };
+
   const handleBulkSetActive = async (isActive: boolean) => {
     const productIds = Array.from(selected);
     if (!confirm(`선택된 ${productIds.length}개 상품을 ${isActive ? '판매중으로 전환' : '숨김 처리'}하시겠습니까?`)) return;
@@ -187,6 +211,8 @@ export default function AdminProductsPage() {
           <span className="text-sm font-medium text-primary-800">{selected.size}개 선택됨</span>
           <button onClick={() => setBulkModal(true)} className="text-sm bg-red-500 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-red-600">SALE 적용</button>
           <button onClick={handleBulkRemoveSale} className="text-sm border border-slate-300 text-slate-600 px-3 py-1.5 rounded-lg font-medium hover:bg-slate-100">SALE 해제</button>
+          <button onClick={handleBulkCarryOver} className="text-sm bg-amber-500 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-amber-600">이월 적용</button>
+          <button onClick={handleBulkRemoveCarryOver} className="text-sm border border-slate-300 text-slate-600 px-3 py-1.5 rounded-lg font-medium hover:bg-slate-100">이월 해제</button>
           <button onClick={() => handleBulkSetActive(false)} className="text-sm bg-slate-500 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-slate-600">일괄 숨김</button>
           <button onClick={() => handleBulkSetActive(true)} className="text-sm bg-green-600 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-green-700">일괄 판매중으로</button>
           <button onClick={() => setSelected(new Set())} className="text-xs text-slate-400 hover:text-slate-600 ml-auto">선택 해제</button>
@@ -209,18 +235,17 @@ export default function AdminProductsPage() {
                     <th className="px-3 py-3">
                       <input type="checkbox" checked={allSelected} onChange={toggleAll} className="w-4 h-4 accent-primary-600 cursor-pointer" />
                     </th>
+                    <th className="px-3 py-3">관리</th>
+                    <th className="px-3 py-3 text-center">상태</th>
                     <th className="px-3 py-3">사진</th>
                     <th className="px-3 py-3">브랜드</th>
                     <th className="px-3 py-3">상품명</th>
                     <th className="px-3 py-3">제품번호</th>
                     <th className="px-3 py-3">시즌</th>
                     <th className="px-3 py-3">성별</th>
-                    <th className="px-3 py-3">종류</th>
                     <th className="px-3 py-3">등급별 가격</th>
                     <th className="px-3 py-3 text-center">재고</th>
                     <th className="px-3 py-3">비고</th>
-                    <th className="px-3 py-3 text-center">상태</th>
-                    <th className="px-3 py-3">관리</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
@@ -228,6 +253,18 @@ export default function AdminProductsPage() {
                     <tr key={product.id} className={`text-slate-700 hover:bg-slate-50 ${selected.has(product.id) ? 'bg-primary-50/40' : ''}`}>
                       <td className="px-3 py-2">
                         <input type="checkbox" checked={selected.has(product.id)} onChange={() => toggleSelect(product.id)} className="w-4 h-4 accent-primary-600 cursor-pointer" />
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex gap-2">
+                          <Link href={`/admin/products/${product.id}`} className="text-xs text-primary-600 hover:underline whitespace-nowrap">수정</Link>
+                          <button onClick={() => deleteProduct(product.id)} className="text-xs text-red-400 hover:underline whitespace-nowrap">삭제</button>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <button onClick={() => toggleActive(product.id, product.isActive)}
+                          className={`badge text-xs ${product.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                          {product.isActive ? '판매중' : '숨김'}
+                        </button>
                       </td>
                       <td className="px-3 py-2">
                         <div className="w-12 h-12 rounded-lg overflow-hidden bg-primary-50 flex-shrink-0">
@@ -244,11 +281,15 @@ export default function AdminProductsPage() {
                             SALE {getSaleLabel(product.saleType, product.saleValue)}
                           </span>
                         )}
+                        {product.isCarryOver && (
+                          <span className="text-xs font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded ml-1">
+                            이월
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-xs text-slate-400">{product.productNumber || '-'}</td>
                       <td className="px-3 py-2 text-xs text-slate-500">{product.season || '-'}</td>
                       <td className="px-3 py-2 text-xs text-slate-500">{product.gender || '-'}</td>
-                      <td className="px-3 py-2 text-xs text-slate-500 max-w-[100px] truncate">{product.productType || '-'}</td>
                       <td className="px-3 py-2">
                         {product.prices.length > 0 ? (
                           <div className="space-y-0.5">
@@ -300,22 +341,10 @@ export default function AdminProductsPage() {
                           </button>
                         )}
                       </td>
-                      <td className="px-3 py-2 text-center">
-                        <button onClick={() => toggleActive(product.id, product.isActive)}
-                          className={`badge text-xs ${product.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                          {product.isActive ? '판매중' : '숨김'}
-                        </button>
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex gap-2">
-                          <Link href={`/admin/products/${product.id}`} className="text-xs text-primary-600 hover:underline whitespace-nowrap">수정</Link>
-                          <button onClick={() => deleteProduct(product.id)} className="text-xs text-red-400 hover:underline whitespace-nowrap">삭제</button>
-                        </div>
-                      </td>
                     </tr>
                   ))}
                   {filtered.length === 0 && (
-                    <tr><td colSpan={13} className="text-center py-12 text-slate-400">상품이 없습니다.</td></tr>
+                    <tr><td colSpan={12} className="text-center py-12 text-slate-400">상품이 없습니다.</td></tr>
                   )}
                 </tbody>
               </table>

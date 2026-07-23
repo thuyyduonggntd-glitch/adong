@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import { useCartStore } from '@/store/cart';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import NotificationBell from '@/components/NotificationBell';
 import LanguageSwitcher from '@/components/i18n/LanguageSwitcher';
@@ -31,7 +31,22 @@ export default function Header() {
   const [mounted, setMounted] = useState(false);
   const [qnaCount, setQnaCount] = useState(0);
   const [categories, setCategories] = useState<Category[]>([]);
+  const categoryMenuRef = useRef<HTMLDivElement>(null);
+  const profileMenuRef  = useRef<HTMLDivElement>(null);
   useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (categoryMenuRef.current && !categoryMenuRef.current.contains(e.target as Node)) {
+        setCategoryMenuOpen(false);
+      }
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   useEffect(() => {
     fetch('/api/products/categories')
@@ -55,7 +70,7 @@ export default function Header() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-end py-1 border-b border-slate-50">
         <LanguageSwitcher />
       </div>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8" ref={profileMenuRef}>
         <div className="flex items-center justify-between h-16">
           <Link href="/home" className="flex items-center gap-2">
             <span className="text-2xl font-bold text-primary-700 notranslate">{t('brand.name')}</span>
@@ -67,7 +82,7 @@ export default function Header() {
             <Link href="/home/products?isOnSale=1"    className="text-red-500 font-bold hover:text-red-600 transition-colors">{t('nav.sale')}</Link>
             <Link href="/home/products?isCarryOver=1" className="text-slate-600 font-bold hover:text-slate-800 transition-colors">{t('nav.carryover')}</Link>
             <Link href="/home/products?sort=popular"  className="text-slate-600 font-bold hover:text-slate-800 transition-colors">{t('nav.popular')}</Link>
-            <div className="relative">
+            <div className="relative" ref={categoryMenuRef}>
               <button onClick={() => setCategoryMenuOpen(!categoryMenuOpen)} className="text-slate-600 font-bold hover:text-slate-800 transition-colors flex items-center gap-1">
                 {t('nav.category')}
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">

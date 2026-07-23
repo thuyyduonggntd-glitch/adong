@@ -47,7 +47,7 @@ export default function NewProductPage() {
   const [categoryGroup, setCategoryGroup] = useState<'clothing' | 'item' | ''>('');
   const [form, setForm] = useState({
     name: '', description: '', stock: '',
-    categoryId: '', sizeCategoryId: '', brand: '', productNumber: '', material: '', gender: '공용',
+    categoryId: '', sizeCategoryId: '', brand: '', productNumber: '', gender: '공용',
     season: '', remark: '',
     isOnSale: false,
     isCarryOver: false,
@@ -181,6 +181,8 @@ export default function NewProductPage() {
       .map((g)  => ({ grade: g, price: Number(prices[g]) }));
 
     const saleValue = saleType === 'RATE' ? Number(saleRateStr) : Number(saleAmountStr);
+    // 이월상품도 SALE과 동일한 할인율/할인금액 입력을 공유 — 값이 있으면 SALE 체크 여부와 무관하게 할인 적용
+    const effectiveIsOnSale = form.isOnSale || (form.isCarryOver && Boolean(saleValue));
 
     /* 재고칸을 비워두면 500장으로 자동 저장, 명시적으로 입력한 값(0 포함)은 그대로 저장 */
     const variants = Object.entries(variantStocks).map(([key, stock]) => {
@@ -200,10 +202,10 @@ export default function NewProductPage() {
       body: JSON.stringify({
         ...form,
         stock:           Number(form.stock),
-        isOnSale:        form.isOnSale,
+        isOnSale:        effectiveIsOnSale,
         isCarryOver:     form.isCarryOver,
-        saleType:        form.isOnSale && saleValue ? saleType : null,
-        saleValue:       form.isOnSale && saleValue ? saleValue : null,
+        saleType:        effectiveIsOnSale && saleValue ? saleType : null,
+        saleValue:       effectiveIsOnSale && saleValue ? saleValue : null,
         images:          images.length ? images : ['https://placehold.co/400x400/EFF6FF/2563EB?text=상품'],
         sizeImages,
         prices:          gradePrices,
@@ -242,18 +244,6 @@ export default function NewProductPage() {
               <input className="input text-sm" placeholder="예: 여름1차" value={form.season} onChange={(e) => set('season', e.target.value)} />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">재질</label>
-              <input className="input text-sm" placeholder="예: 면" value={form.material} onChange={(e) => set('material', e.target.value)} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">성별</label>
-              <select className="input text-sm" value={form.gender} onChange={(e) => set('gender', e.target.value)}>
-                <option value="공용">공용</option>
-                <option value="남아">남아</option>
-                <option value="여아">여아</option>
-              </select>
-            </div>
-            <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">카테고리 대분류 *</label>
               <select className="input text-sm" value={categoryGroup}
                 onChange={(e) => { setCategoryGroup(e.target.value as 'clothing' | 'item' | ''); set('categoryId', ''); }} required>
@@ -267,6 +257,14 @@ export default function NewProductPage() {
                 required disabled={!categoryGroup}>
                 <option value="">{categoryGroup ? '소분류 선택' : '대분류를 먼저 선택하세요'}</option>
                 {subCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">성별</label>
+              <select className="input text-sm" value={form.gender} onChange={(e) => set('gender', e.target.value)}>
+                <option value="공용">공용</option>
+                <option value="남아">남아</option>
+                <option value="여아">여아</option>
               </select>
             </div>
             <div>
@@ -297,7 +295,7 @@ export default function NewProductPage() {
             <div className="grid grid-cols-2 gap-3">
               {DEALER_GRADE_ORDER.map((grade) => {
                 const base  = Number(prices[grade]);
-                const final = base && form.isOnSale
+                const final = base && (form.isOnSale || form.isCarryOver)
                   ? calcFinalPrice(base, true, saleType, saleType === 'RATE' ? Number(saleRateStr) : Number(saleAmountStr))
                   : null;
                 return (
@@ -315,7 +313,7 @@ export default function NewProductPage() {
                         const newPrices = { ...prices, [grade]: e.target.value };
                         setPrices(newPrices);
                         // REGULAR 가격 변경 시 SALE 금액 재계산
-                        if (grade === 'REGULAR' && form.isOnSale) {
+                        if (grade === 'REGULAR' && (form.isOnSale || form.isCarryOver)) {
                           const rp = Number(e.target.value);
                           if (rp > 0 && saleType === 'RATE' && saleRateStr) {
                             setSaleAmountStr(String(Math.round(rp * Number(saleRateStr) / 100)));
@@ -342,7 +340,7 @@ export default function NewProductPage() {
               <span className="text-sm font-semibold text-slate-700">이월상품</span>
             </label>
 
-            {form.isOnSale && (
+            {(form.isOnSale || form.isCarryOver) && (
               <div className="pl-6 space-y-3">
                 <div className="flex items-end gap-4 flex-wrap">
                   {/* 할인율 */}

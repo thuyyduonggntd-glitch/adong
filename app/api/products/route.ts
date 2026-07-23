@@ -12,8 +12,8 @@ import { buildProductSearchWhere } from '@/lib/productSearch';
 const ADMIN_PRODUCT_SELECT = {
   id: true, name: true, price: true, stock: true, isActive: true,
   images: true, brand: true, productNumber: true, season: true,
-  isOnSale: true, saleType: true, saleValue: true,
-  gender: true, productType: true, material: true, remark: true,
+  isOnSale: true, saleType: true, saleValue: true, isCarryOver: true,
+  gender: true, remark: true,
   sizes: true, colors: true,
   category: { select: { name: true } },
   prices: { select: { grade: true, price: true } },
@@ -23,7 +23,7 @@ const ADMIN_PRODUCT_SELECT = {
 const CUSTOMER_PRODUCT_SELECT = {
   id: true, name: true,
   name_en: true, name_vi: true, name_th: true, name_ru: true, name_mn: true, name_es: true,
-  images: true, price: true, isOnSale: true, saleType: true, saleValue: true, updatedAt: true,
+  images: true, price: true, isOnSale: true, saleType: true, saleValue: true, isCarryOver: true, updatedAt: true,
   category: {
     select: {
       name: true,
@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
   const conditions: any[] = [];
   if (admin !== '1') conditions.push({ isActive: true });
   if (category) conditions.push({ OR: [{ category: { slug: category } }, { sizeCategory: { slug: category } }] });
-  if (q)        conditions.push(buildProductSearchWhere(q));
+  if (q)        conditions.push(await buildProductSearchWhere(q));
   if (brand)    conditions.push({ brand: { contains: brand, mode: 'insensitive' } });
   if (season)   conditions.push({ season: { contains: season, mode: 'insensitive' } });
   if (isOnSale === '1') conditions.push({ isOnSale: true });
@@ -97,9 +97,7 @@ export async function POST(req: NextRequest) {
       images:        d.images || [],
       brand:         d.brand        || null,
       productNumber: d.productNumber || null,
-      material:      d.material     || null,
       gender:        d.gender       || null,
-      productType:   d.productType  || null,
       season:        d.season       || null,
       sizeImages:      d.sizeImages      || [],
       sizeExtraPrices: d.sizeExtraPrices || null,

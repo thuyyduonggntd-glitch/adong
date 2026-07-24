@@ -450,6 +450,35 @@ model NoticeSeen {
   @@unique([userId, noticeId])
 }
 
+model Faq {
+  id       String  @id @default(cuid())
+  category String
+  question String
+  answer   String  @db.Text
+  order    Int     @default(0)
+  isActive Boolean @default(true)
+
+  // 자동 번역 필드 (Google Cloud Translation API) — 없으면 한국어 원본으로 폴백
+  question_en  String?
+  question_vi  String?
+  question_th  String?
+  question_ru  String?
+  question_mn  String?
+  question_es  String?
+  answer_en    String?   @db.Text
+  answer_vi    String?   @db.Text
+  answer_th    String?   @db.Text
+  answer_ru    String?   @db.Text
+  answer_mn    String?   @db.Text
+  answer_es    String?   @db.Text
+  translatedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+}
+
 model InboundItem {
   id        String    @id @default(cuid())
   inboundId String

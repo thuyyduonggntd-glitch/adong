@@ -152,6 +152,29 @@ export async function translateAndSaveNotice(noticeId: string): Promise<void> {
   await prisma.notice.update({ where: { id: noticeId }, data: { ...result, translatedAt: new Date() } });
 }
 
+/** FAQ 질문+답변을 6개 언어로 번역 (2개 필드를 한 번에 묶어서 언어당 1회 호출) */
+export async function translateAndSaveFaq(faqId: string): Promise<void> {
+  const faq = await prisma.faq.findUnique({ where: { id: faqId }, select: { question: true, answer: true } });
+  if (!faq) return;
+
+  const source = [faq.question, faq.answer];
+  const result: Partial<Record<`question_${TranslateTargetLang}` | `answer_${TranslateTargetLang}`, string>> = {};
+
+  await Promise.all(
+    TRANSLATE_TARGET_LANGS.map(async (lang) => {
+      try {
+        const translated = await translateBatch(source, lang);
+        result[`question_${lang}`] = translated[0] || faq.question;
+        result[`answer_${lang}`]   = translated[1] || faq.answer;
+      } catch (err) {
+        console.error(`[translate] faq failed for lang=${lang}:`, err);
+      }
+    })
+  );
+
+  await prisma.faq.update({ where: { id: faqId }, data: { ...result, translatedAt: new Date() } });
+}
+
 /** 소스(한국어) 필드가 바뀌었는지 확인 — 바뀌지 않았으면 재번역 생략 */
 export function productSourceChanged(
   before: ProductTranslatableFields,

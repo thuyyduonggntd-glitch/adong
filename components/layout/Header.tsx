@@ -127,6 +127,7 @@ export default function Header() {
               )}
             </div>
             <Link href="/home/qna"      className="text-black hover:text-primary-600 transition-colors flex items-center">{t('nav.qna')}<QnaBadge count={qnaCount} /></Link>
+            <Link href="/home/faq"      className="text-black hover:text-primary-600 transition-colors">{t('nav.faq')}</Link>
             <Link href="/home/orders"   className="text-black hover:text-primary-600 transition-colors">{t('nav.orders')}</Link>
             <Link href="/home/wishlist" className="text-black hover:text-red-500 transition-colors">{t('nav.wishlist')}</Link>
             <Link href="/home/mypage"   className="text-black hover:text-primary-600 transition-colors">{t('nav.mypage')}</Link>
@@ -163,6 +164,7 @@ export default function Header() {
                     </Link>
                     <Link href="/home/mypage"          className="block px-4 py-2 text-sm text-slate-700 hover:bg-primary-50" onClick={() => setProfileMenuOpen(false)}>{t('nav.mypageFull')}</Link>
                     <Link href="/home/qna"             className="px-4 py-2 text-sm text-slate-700 hover:bg-primary-50 flex items-center" onClick={() => setProfileMenuOpen(false)}>{t('nav.qna')}<QnaBadge count={qnaCount} /></Link>
+                    <Link href="/home/faq"             className="block px-4 py-2 text-sm text-slate-700 hover:bg-primary-50" onClick={() => setProfileMenuOpen(false)}>{t('nav.faq')}</Link>
                     {(session.user as any)?.role === 'ADMIN' && (
                       <Link href="/admin/dashboard" className="block px-4 py-2 text-sm text-primary-600 hover:bg-primary-50" onClick={() => setProfileMenuOpen(false)}>{t('nav.admin')}</Link>
                     )}
@@ -223,6 +225,7 @@ export default function Header() {
             </div>
             <div className="my-1 border-t border-slate-100" />
             <Link href="/home/qna"      className="px-4 py-2 text-sm text-black hover:bg-primary-50 rounded-lg flex items-center" onClick={() => setMenuOpen(false)}>{t('nav.qna')}<QnaBadge count={qnaCount} /></Link>
+            <Link href="/home/faq"      className="block px-4 py-2 text-sm text-black hover:bg-primary-50 rounded-lg" onClick={() => setMenuOpen(false)}>{t('nav.faq')}</Link>
             <Link href="/home/orders"   className="block px-4 py-2 text-sm text-black hover:bg-primary-50 rounded-lg" onClick={() => setMenuOpen(false)}>{t('nav.orders')}</Link>
             <Link href="/home/wishlist" className="block px-4 py-2 text-sm text-black hover:text-red-500 hover:bg-red-50 rounded-lg" onClick={() => setMenuOpen(false)}>{t('nav.wishlist')}</Link>
             <Link href="/home/mypage" className="block px-4 py-2 text-sm text-black hover:bg-primary-50 rounded-lg" onClick={() => setMenuOpen(false)}>{t('nav.mypage')}</Link>

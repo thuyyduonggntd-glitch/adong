@@ -16,7 +16,7 @@ export default function NoticePopup() {
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm max-h-[85vh] overflow-y-auto p-6 space-y-4">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold px-2 py-1 rounded-lg bg-primary-50 text-primary-600">
             {t(`notice.type.${current.type.toLowerCase()}`)}

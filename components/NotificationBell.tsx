@@ -53,7 +53,7 @@ export default function NotificationBell() {
                       <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${typeStyle[n.type]}`}>
                         {t(`notice.type.${n.type.toLowerCase()}`)}
                       </span>
-                      <p className="text-sm font-bold text-slate-800 truncate">{title}</p>
+                      <p className="text-sm font-bold text-slate-800 break-words">{title}</p>
                     </div>
                     <p className="text-xs text-slate-500 whitespace-pre-wrap">{content}</p>
                     <p className="text-[11px] text-slate-400 mt-1">{new Date(n.createdAt).toLocaleString('ko-KR')}</p>

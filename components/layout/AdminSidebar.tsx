@@ -76,7 +76,7 @@ export default function AdminSidebar() {
         <div className="md:hidden fixed inset-0 bg-black/40 z-40" onClick={() => setOpen(false)} />
       )}
 
-      <aside className={`fixed md:static inset-y-0 left-0 z-50 w-64 min-h-screen bg-primary-900 text-white flex flex-col transform transition-transform duration-200 ease-in-out md:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed md:static inset-y-0 left-0 z-50 w-64 md:min-h-screen bg-primary-900 text-white flex flex-col transform transition-transform duration-200 ease-in-out md:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-6 border-b border-primary-700 flex items-center justify-between">
           <div>
             <Link href={homeHref} className="text-xl font-bold text-primary-200">꿈비샵 관리자</Link>

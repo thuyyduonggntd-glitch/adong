@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { formatPrice, formatDate, isWithinTimeWindow, getSaleLabel } from '@/lib/utils';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -8,6 +8,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Pagination from '@/components/ui/Pagination';
 import { resolveColorImage } from '@/lib/productImages';
+import { colorCodeFor } from '@/lib/productColorCode';
 
 const PAGE_SIZE = 40;
 
@@ -17,6 +18,7 @@ const PAGE_SIZE = 40;
 type Product = {
   id: string; name: string; images: string[]; colors: string[]; colorImages?: { color: string; imageUrl: string }[]; brand: string | null;
   productNumber?: string | null;
+  colorCodes?: { color: string; sequence: number }[];
   sizeExtraPrices?: Record<string, number> | null;
 };
 /* 세일 스냅샷: OrderItem/InboundItem 자체에 저장된 "주문·입고 당시" 세일 상태 (실시간 product.isOnSale 아님) */
@@ -41,13 +43,13 @@ type OutStockItem = SaleSnapshot & {
 type CancelledItem = SaleSnapshot & {
   id: string; quantity: number; price: number; size: string | null; color: string | null;
   cancelledAt: string;
-  product: { id: string; name: string; images: string[]; brand: string | null; productNumber?: string | null };
+  product: { id: string; name: string; images: string[]; brand: string | null; productNumber?: string | null; colorCodes?: { color: string; sequence: number }[] };
   order: { id: string; createdAt: string };
 };
 type InboundOrderItem = SaleSnapshot & {
   id: string; quantity: number; price: number; size: string | null; color: string | null;
   arrivedAt: string; deliveryRequestedAt: string | null;
-  product: { id: string; name: string; images: string[]; brand: string | null; productNumber?: string | null };
+  product: { id: string; name: string; images: string[]; brand: string | null; productNumber?: string | null; colorCodes?: { color: string; sequence: number }[] };
   order: { id: string; status: string };
   _source: 'order';
 };
@@ -55,7 +57,7 @@ type SupplierItem = SaleSnapshot & {
   id: string; quantity: number; size: string | null; color: string | null;
   arrivedAt: string; deliveryRequestedAt: string | null;
   name: string; brand: string; note: string | null;
-  product: { id: string; name: string; images: string[]; brand: string | null; productNumber?: string | null } | null;
+  product: { id: string; name: string; images: string[]; brand: string | null; productNumber?: string | null; colorCodes?: { color: string; sequence: number }[] } | null;
   _source: 'supplier';
 };
 type UnifiedItem = InboundOrderItem | SupplierItem;
@@ -72,6 +74,13 @@ type ShippingEntry = {
 };
 
 type MainTab = 'orders' | 'cancelled' | 'inbound' | 'shipping';
+
+/* 상품 문의 모달에 전달할 주문 스냅샷 정보 */
+type InquiryTarget = {
+  brand: string | null; name: string; productNumber?: string | null;
+  size: string | null; color: string | null; quantity: number; price: number;
+  orderId: string; orderCreatedAt: string;
+};
 
 /* ════════════════════════════════════════
    주문내역 헬퍼
@@ -138,11 +147,12 @@ function MobileSubtotal({ items }: { items: Array<{ quantity: number; price: num
 }
 
 /* isOnSale/saleType/saleValue: 실시간 product 상태가 아니라 "주문 당시" 스냅샷을 받는다 */
-function ProductCells({ product, size, color, quantity, price, orderCreatedAt, isOnSale, saleType, saleValue, extra }: {
+function ProductCells({ product, size, color, quantity, price, orderCreatedAt, isOnSale, saleType, saleValue, extra, onInquiry }: {
   product: Product; size: string; color: string; quantity: number; price: number;
   orderCreatedAt: string; isOnSale: boolean; saleType: string | null; saleValue: number | null;
-  extra?: React.ReactNode;
+  extra?: React.ReactNode; onInquiry?: () => void;
 }) {
+  const { t } = useTranslation();
   const sizeSurcharge    = (product.sizeExtraPrices?.[size] ?? 0);
   const priceNoSurcharge = price - sizeSurcharge;
   const beforeSalePrice  = isOnSale && saleType && saleValue
@@ -168,7 +178,16 @@ function ProductCells({ product, size, color, quantity, price, orderCreatedAt, i
       </td>
       <td className="px-3 py-3">
         <p className="font-medium text-slate-800 truncate max-w-[180px]">{product.name}</p>
-        {product.productNumber && <span className="text-xs text-slate-400 font-mono">{product.productNumber}</span>}
+        {product.productNumber && (
+          <span className="text-xs text-slate-400 font-mono">
+            {colorCodeFor(product.productNumber, product.colorCodes, color) ?? product.productNumber}
+          </span>
+        )}
+        {onInquiry && (
+          <button type="button" onClick={onInquiry} className="block text-xs text-primary-500 hover:text-primary-700 hover:underline mt-0.5">
+            {t('orders.inquiry.button')}
+          </button>
+        )}
       </td>
       <td className="px-3 py-3 text-center text-xs text-slate-500">{size}</td>
       <td className="px-3 py-3 text-center text-xs text-slate-500">{color}</td>
@@ -195,10 +214,11 @@ function ProductCells({ product, size, color, quantity, price, orderCreatedAt, i
 }
 
 /* 모바일 카드용 — ProductCells와 동일한 할인가 계산 로직을 공유 (표 대신 카드로 보여줄 때 사용) */
-function ProductCardInfo({ product, size, color, quantity, price, isOnSale, saleType, saleValue }: {
+function ProductCardInfo({ product, size, color, quantity, price, isOnSale, saleType, saleValue, onInquiry }: {
   product: Product; size: string; color: string; quantity: number; price: number;
-  isOnSale: boolean; saleType: string | null; saleValue: number | null;
+  isOnSale: boolean; saleType: string | null; saleValue: number | null; onInquiry?: () => void;
 }) {
+  const { t } = useTranslation();
   const sizeSurcharge    = (product.sizeExtraPrices?.[size] ?? 0);
   const priceNoSurcharge = price - sizeSurcharge;
   const beforeSalePrice  = isOnSale && saleType && saleValue
@@ -220,7 +240,16 @@ function ProductCardInfo({ product, size, color, quantity, price, isOnSale, sale
           <span className="block text-xs font-semibold text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded whitespace-nowrap w-fit mb-0.5">{product.brand}</span>
         )}
         <p className="font-medium text-slate-800 text-sm truncate">{product.name}</p>
-        {product.productNumber && <span className="text-xs text-slate-400 font-mono block">{product.productNumber}</span>}
+        {product.productNumber && (
+          <span className="text-xs text-slate-400 font-mono block">
+            {colorCodeFor(product.productNumber, product.colorCodes, color) ?? product.productNumber}
+          </span>
+        )}
+        {onInquiry && (
+          <button type="button" onClick={onInquiry} className="block text-xs text-primary-500 hover:text-primary-700 hover:underline mt-0.5">
+            {t('orders.inquiry.button')}
+          </button>
+        )}
         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-1 text-xs text-slate-500">
           <span>{size}</span><span className="text-slate-300">/</span><span>{color}</span>
           <span className="text-slate-300">·</span><span className="font-semibold text-slate-700">{quantity}</span>
@@ -259,6 +288,133 @@ function groupInboundByDate(items: UnifiedItem[]): Array<{ date: string; label: 
     }));
 }
 
+/* 상품 문의 모달 — 주문내역에서 상품별로 바로 1:1 문의(QnA)를 남길 수 있는 팝업. 카테고리는 항상 '상품'으로 고정. */
+/* 주문 스냅샷 카드 — html2canvas로 캡처할 대상. 화면엔 보이지 않고(오프스크린) 캡처용으로만 렌더링된다. */
+function OrderSnapshotCard({ target, snapRef }: { target: InquiryTarget; snapRef: React.RefObject<HTMLDivElement> }) {
+  const { t } = useTranslation();
+  return (
+    <div ref={snapRef} style={{ position: 'absolute', top: 0, left: -9999, pointerEvents: 'none', width: 360 }} className="bg-white p-5 font-sans">
+      {target.brand && (
+        <span className="text-xs font-semibold text-primary-600 bg-primary-50 px-2 py-0.5 rounded whitespace-nowrap">{target.brand}</span>
+      )}
+      <p className="font-bold text-slate-800 text-base mt-1.5">{target.name}</p>
+      {target.productNumber && <p className="text-xs text-slate-400 font-mono mt-0.5">{target.productNumber}</p>}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-2 text-sm text-slate-600">
+        {target.size && <span>{t('orders.col.size')}: {target.size}</span>}
+        {target.color && <span>{t('orders.col.color')}: {target.color}</span>}
+        <span>{t('orders.col.qty')}: {target.quantity}</span>
+      </div>
+      <p className="text-lg font-bold text-primary-700 mt-2">{formatPrice(target.price)}</p>
+      <div className="border-t border-slate-100 mt-3 pt-3 text-xs text-slate-400 space-y-1">
+        <p>{t('orders.col.orderNo')}: #{target.orderId.slice(-8).toUpperCase()}</p>
+        <p>{t('orders.col.orderDate')}: {new Date(target.orderCreatedAt).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>
+      </div>
+    </div>
+  );
+}
+
+function ProductInquiryModal({ target, onClose }: {
+  target: InquiryTarget; onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const snapRef = useRef<HTMLDivElement>(null);
+  const label = target.brand ? `${target.brand} ${target.name}` : target.name;
+  const [title, setTitle]   = useState(t('orders.inquiry.defaultTitle', { name: label }));
+  const [content, setContent] = useState('');
+  const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
+  const [snapshotState, setSnapshotState] = useState<'loading' | 'ready' | 'failed'>('loading');
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const html2canvas = (await import('html2canvas')).default;
+        const canvas = await html2canvas(snapRef.current!, { backgroundColor: '#ffffff', scale: 2 });
+        const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+        if (!blob || cancelled) return;
+        const fd = new FormData();
+        fd.append('files', new File([blob], 'order-snapshot.png', { type: 'image/png' }));
+        const up = await fetch('/api/upload', { method: 'POST', body: fd });
+        const { urls } = await up.json();
+        if (cancelled) return;
+        setSnapshotUrl(urls?.[0] ?? null);
+        setSnapshotState(urls?.[0] ? 'ready' : 'failed');
+      } catch {
+        if (!cancelled) setSnapshotState('failed');
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleSubmit = async () => {
+    if (!content.trim()) return;
+    setSubmitting(true);
+    const res = await fetch('/api/qna', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, content, category: 'PRODUCT', images: snapshotUrl ? [snapshotUrl] : [] }),
+    });
+    setSubmitting(false);
+    if (res.ok) setDone(true);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <OrderSnapshotCard target={target} snapRef={snapRef} />
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        {done ? (
+          <div className="text-center py-4">
+            <p className="text-3xl mb-2">✅</p>
+            <p className="font-semibold text-slate-800 mb-1">{t('orders.inquiry.doneTitle')}</p>
+            <p className="text-xs text-slate-400 mb-4">{t('orders.inquiry.doneDesc')}</p>
+            <button onClick={onClose} className="btn-primary text-sm px-6">{t('orders.inquiry.confirm')}</button>
+          </div>
+        ) : (
+          <>
+            <h3 className="font-bold text-slate-800">{t('orders.inquiry.modalTitle')}</h3>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">{t('qna.subjectLabel')}</label>
+              <input className="input text-sm w-full" value={title} onChange={(e) => setTitle(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">{t('qna.contentLabel')}</label>
+              <textarea autoFocus className="input text-sm w-full min-h-28 resize-none"
+                placeholder={t('orders.inquiry.contentPlaceholder')}
+                value={content} onChange={(e) => setContent(e.target.value)} />
+            </div>
+
+            {/* 자동 첨부된 주문 정보 스냅샷 (읽기 전용) */}
+            <div>
+              <label className="block text-xs text-slate-500 mb-2">{t('orders.inquiry.snapshotLabel')}</label>
+              {snapshotState === 'loading' && (
+                <div className="border border-slate-100 rounded-xl p-3 text-xs text-slate-400">{t('orders.inquiry.snapshotGenerating')}</div>
+              )}
+              {snapshotState === 'failed' && (
+                <div className="border border-slate-100 rounded-xl p-3 text-xs text-slate-400">{t('orders.inquiry.snapshotFailed')}</div>
+              )}
+              {snapshotState === 'ready' && snapshotUrl && (
+                <div className="relative w-24 h-24 rounded-lg overflow-hidden border border-slate-200">
+                  <Image src={snapshotUrl} alt="" fill className="object-cover" />
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 justify-end pt-1">
+              <button onClick={onClose} className="btn-outline text-sm">{t('qna.cancel')}</button>
+              <button onClick={handleSubmit} disabled={submitting || snapshotState === 'loading' || !content.trim()} className="btn-primary text-sm px-6 disabled:opacity-50">
+                {submitting ? t('qna.submitting') : t('orders.inquiry.submit')}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ════════════════════════════════════════
    메인 컴포넌트
 ════════════════════════════════════════ */
@@ -268,6 +424,7 @@ export default function OrdersManagementPage() {
   const router = useRouter();
   const STATUS_LABEL = getStatusLabel(t);
   const [mainTab, setMainTab] = useState<MainTab>('orders');
+  const [inquiryProduct, setInquiryProduct] = useState<InquiryTarget | null>(null);
 
   /* ── 주문내역 상태 ── */
   const [orders, setOrders]          = useState<Order[]>([]);
@@ -508,6 +665,9 @@ export default function OrdersManagementPage() {
   /* ════ RENDER ════ */
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      {inquiryProduct && (
+        <ProductInquiryModal target={inquiryProduct} onClose={() => setInquiryProduct(null)} />
+      )}
       <h1 className="text-2xl font-bold text-slate-800 mb-6">{t('orders.title')}</h1>
 
       {/* 메인 탭 */}
@@ -616,7 +776,12 @@ export default function OrdersManagementPage() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <ProductCardInfo product={item.product} size={item.size} color={item.color} quantity={item.quantity} price={item.price}
-                              isOnSale={item.isOnSale} saleType={item.saleType} saleValue={item.saleValue} />
+                              isOnSale={item.isOnSale} saleType={item.saleType} saleValue={item.saleValue}
+                              onInquiry={() => setInquiryProduct({
+                                brand: item.product.brand, name: item.product.name, productNumber: item.product.productNumber,
+                                size: item.size, color: item.color, quantity: item.quantity, price: item.price,
+                                orderId: item.orderId, orderCreatedAt: item.orderCreatedAt,
+                              })} />
                             <div className="flex items-center justify-between mt-1.5">
                               <span className="text-xs text-slate-400">
                                 {new Date(item.orderCreatedAt).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
@@ -675,6 +840,11 @@ export default function OrdersManagementPage() {
                               <ProductCells product={item.product} size={item.size} color={item.color}
                                 quantity={item.quantity} price={item.price} orderCreatedAt={item.orderCreatedAt}
                                 isOnSale={item.isOnSale} saleType={item.saleType} saleValue={item.saleValue}
+                                onInquiry={() => setInquiryProduct({
+                                brand: item.product.brand, name: item.product.name, productNumber: item.product.productNumber,
+                                size: item.size, color: item.color, quantity: item.quantity, price: item.price,
+                                orderId: item.orderId, orderCreatedAt: item.orderCreatedAt,
+                              })}
                                 extra={<span className={`badge text-xs ${st.color}`}>{st.icon} {st.label}</span>} />
                             </tr>
                           );
@@ -699,7 +869,12 @@ export default function OrdersManagementPage() {
                       {arrivedFlat.map((item) => (
                         <div key={item.id} className="p-3">
                           <ProductCardInfo product={item.product} size={item.size} color={item.color} quantity={item.quantity} price={item.price}
-                            isOnSale={item.isOnSale} saleType={item.saleType} saleValue={item.saleValue} />
+                            isOnSale={item.isOnSale} saleType={item.saleType} saleValue={item.saleValue}
+                            onInquiry={() => setInquiryProduct({
+                                brand: item.product.brand, name: item.product.name, productNumber: item.product.productNumber,
+                                size: item.size, color: item.color, quantity: item.quantity, price: item.price,
+                                orderId: item.orderId, orderCreatedAt: item.orderCreatedAt,
+                              })} />
                           <div className="flex items-center justify-between mt-1.5">
                             <span className="text-xs text-slate-400">
                               {new Date(item.orderCreatedAt).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
@@ -736,6 +911,11 @@ export default function OrdersManagementPage() {
                               <ProductCells product={item.product} size={item.size} color={item.color}
                                 quantity={item.quantity} price={item.price} orderCreatedAt={item.orderCreatedAt}
                                 isOnSale={item.isOnSale} saleType={item.saleType} saleValue={item.saleValue}
+                                onInquiry={() => setInquiryProduct({
+                                brand: item.product.brand, name: item.product.name, productNumber: item.product.productNumber,
+                                size: item.size, color: item.color, quantity: item.quantity, price: item.price,
+                                orderId: item.orderId, orderCreatedAt: item.orderCreatedAt,
+                              })}
                                 extra={<span className="text-xs text-emerald-600 font-medium">
                                   {item.arrivedAt ? new Date(item.arrivedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '-'}
                                 </span>} />
@@ -761,7 +941,12 @@ export default function OrdersManagementPage() {
                       {todayOusuFlat.map((item) => (
                         <div key={item.id} className="p-3">
                           <ProductCardInfo product={item.product} size={item.size} color={item.color} quantity={item.quantity} price={item.price}
-                            isOnSale={item.isOnSale} saleType={item.saleType} saleValue={item.saleValue} />
+                            isOnSale={item.isOnSale} saleType={item.saleType} saleValue={item.saleValue}
+                            onInquiry={() => setInquiryProduct({
+                                brand: item.product.brand, name: item.product.name, productNumber: item.product.productNumber,
+                                size: item.size, color: item.color, quantity: item.quantity, price: item.price,
+                                orderId: item.orderId, orderCreatedAt: item.orderCreatedAt,
+                              })} />
                           <div className="flex items-center justify-between mt-1.5">
                             <span className="text-xs text-slate-400">
                               {new Date(item.orderCreatedAt).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
@@ -798,6 +983,11 @@ export default function OrdersManagementPage() {
                               <ProductCells product={item.product} size={item.size} color={item.color}
                                 quantity={item.quantity} price={item.price} orderCreatedAt={item.orderCreatedAt}
                                 isOnSale={item.isOnSale} saleType={item.saleType} saleValue={item.saleValue}
+                                onInquiry={() => setInquiryProduct({
+                                brand: item.product.brand, name: item.product.name, productNumber: item.product.productNumber,
+                                size: item.size, color: item.color, quantity: item.quantity, price: item.price,
+                                orderId: item.orderId, orderCreatedAt: item.orderCreatedAt,
+                              })}
                                 extra={item.outOfStockAt
                                   ? <span className="text-xs font-bold bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">{t('orders.badge.outOfStock')}</span>
                                   : <span className="text-xs font-bold bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">{t('orders.badge.unshipped')}</span>} />
@@ -845,7 +1035,12 @@ export default function OrdersManagementPage() {
                           </span>
                         </div>
                         <ProductCardInfo product={item.product} size={item.size} color={item.color} quantity={item.quantity} price={item.price}
-                          isOnSale={item.isOnSale} saleType={item.saleType} saleValue={item.saleValue} />
+                          isOnSale={item.isOnSale} saleType={item.saleType} saleValue={item.saleValue}
+                          onInquiry={() => setInquiryProduct({
+                            brand: item.product.brand, name: item.product.name, productNumber: item.product.productNumber,
+                            size: item.size, color: item.color, quantity: item.quantity, price: item.price,
+                            orderId: item.order.id, orderCreatedAt: item.order.createdAt,
+                          })} />
                         <div className="flex items-center justify-between mt-1.5 gap-2">
                           <span className="text-xs text-slate-400">
                             {new Date(item.order.createdAt).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
@@ -893,6 +1088,11 @@ export default function OrdersManagementPage() {
                             <ProductCells product={item.product} size={item.size} color={item.color}
                               quantity={item.quantity} price={item.price} orderCreatedAt={item.order.createdAt}
                               isOnSale={item.isOnSale} saleType={item.saleType} saleValue={item.saleValue}
+                              onInquiry={() => setInquiryProduct({
+                                brand: item.product.brand, name: item.product.name, productNumber: item.product.productNumber,
+                                size: item.size, color: item.color, quantity: item.quantity, price: item.price,
+                                orderId: item.order.id, orderCreatedAt: item.order.createdAt,
+                              })}
                               extra={<span className={`text-xs font-medium whitespace-nowrap ${isOos ? 'text-orange-500' : 'text-purple-500'}`}>
                                 {new Date(processedAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
                               </span>} />
@@ -933,7 +1133,11 @@ export default function OrdersManagementPage() {
                 <div className="flex-1 min-w-0">
                   {item.product.brand && <p className="text-xs text-primary-600 font-semibold mb-0.5">{item.product.brand}</p>}
                   <p className="text-sm font-medium text-slate-700 line-through truncate">{item.product.name}</p>
-                  {item.product.productNumber && <span className="text-xs text-slate-400 font-mono">{item.product.productNumber}</span>}
+                  {item.product.productNumber && (
+                    <span className="text-xs text-slate-400 font-mono">
+                      {colorCodeFor(item.product.productNumber, item.product.colorCodes, item.color) ?? item.product.productNumber}
+                    </span>
+                  )}
                   {item.isOnSale && (
                     <span className="text-xs font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded ml-1 inline-block whitespace-nowrap">
                       {getSaleLabel(item.saleType, item.saleValue)}
@@ -1038,7 +1242,11 @@ export default function OrdersManagementPage() {
                                   <div className="flex-1 min-w-0">
                                     {oi.product.brand && <span className="block w-fit text-xs font-semibold text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded mb-0.5">{oi.product.brand}</span>}
                                     <p className="font-medium text-slate-800 text-sm truncate">{oi.product.name}</p>
-                                    {oi.product.productNumber && <span className="text-xs text-slate-400 font-mono block">{oi.product.productNumber}</span>}
+                                    {oi.product.productNumber && (
+                                      <span className="text-xs text-slate-400 font-mono block">
+                                        {colorCodeFor(oi.product.productNumber, oi.product.colorCodes, oi.color) ?? oi.product.productNumber}
+                                      </span>
+                                    )}
                                     <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-1 text-xs text-slate-500">
                                       <span>{oi.size || '-'}</span><span className="text-slate-300">/</span><span>{oi.color || '-'}</span>
                                       <span className="text-slate-300">·</span><span className="font-semibold text-slate-700">{oi.quantity}</span>
@@ -1063,7 +1271,7 @@ export default function OrdersManagementPage() {
                             const img   = si.product?.images?.[0] || 'https://placehold.co/44x44';
                             const name  = si.product?.name || si.name;
                             const brand = si.product?.brand || si.brand;
-                            const productNumber = si.product?.productNumber;
+                            const productNumber = colorCodeFor(si.product?.productNumber, si.product?.colorCodes, si.color) ?? si.product?.productNumber;
                             return (
                               <div key={si.id} className={`p-3 flex gap-3 ${si.deliveryRequestedAt ? 'bg-amber-50/40' : ''}`}>
                                 <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-blue-50 flex-shrink-0">
@@ -1124,7 +1332,11 @@ export default function OrdersManagementPage() {
                                     <td className="px-4 py-3">{oi.product.brand ? <span className="text-xs font-semibold text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded">{oi.product.brand}</span> : <span className="text-slate-300 text-xs">-</span>}</td>
                                     <td className="px-4 py-3 font-medium text-slate-800 max-w-[160px]">
                                       <span className="block truncate">{oi.product.name}</span>
-                                      {oi.product.productNumber && <span className="block text-xs text-slate-400 font-mono">{oi.product.productNumber}</span>}
+                                      {oi.product.productNumber && (
+                                        <span className="block text-xs text-slate-400 font-mono">
+                                          {colorCodeFor(oi.product.productNumber, oi.product.colorCodes, oi.color) ?? oi.product.productNumber}
+                                        </span>
+                                      )}
                                       {delivered
                                         ? <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-semibold mt-0.5 inline-block">{t('orders.badge.delivered')}</span>
                                         : oi.deliveryRequestedAt && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-semibold mt-0.5 inline-block">{t('orders.badge.deliveryRequested')}</span>}
@@ -1147,7 +1359,7 @@ export default function OrdersManagementPage() {
                                 const img   = si.product?.images?.[0] || 'https://placehold.co/44x44';
                                 const name  = si.product?.name || si.name;
                                 const brand = si.product?.brand || si.brand;
-                                const productNumber = si.product?.productNumber;
+                                const productNumber = colorCodeFor(si.product?.productNumber, si.product?.colorCodes, si.color) ?? si.product?.productNumber;
                                 return (
                                   <tr key={si.id} className={`transition-colors ${si.deliveryRequestedAt ? 'bg-amber-50/40' : 'hover:bg-blue-50/20'}`}>
                                     <td className="px-4 py-3"><div className="relative w-11 h-11 rounded-lg overflow-hidden bg-blue-50"><Image src={img} alt={name} fill className="object-cover" /></div></td>
@@ -1429,7 +1641,11 @@ export default function OrdersManagementPage() {
                                   <p className="text-xs text-primary-600 font-semibold mb-0.5">{item.product.brand}</p>
                                 )}
                                 <p className="text-sm font-medium text-slate-800 truncate">{item.product.name}</p>
-                                {item.product.productNumber && <span className="text-xs text-slate-400 font-mono">{item.product.productNumber}</span>}
+                                {item.product.productNumber && (
+                                  <span className="text-xs text-slate-400 font-mono">
+                                    {colorCodeFor(item.product.productNumber, item.product.colorCodes, item.color) ?? item.product.productNumber}
+                                  </span>
+                                )}
                                 {item.isOnSale && (
                                   <span className="text-xs font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded ml-1 inline-block whitespace-nowrap">
                                     {getSaleLabel(item.saleType, item.saleValue)}
@@ -1489,7 +1705,11 @@ export default function OrdersManagementPage() {
                           )}
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-slate-800 truncate">{item.product.name}</p>
-                            {item.product.productNumber && <span className="text-xs text-slate-400 font-mono">{item.product.productNumber}</span>}
+                            {item.product.productNumber && (
+                              <span className="text-xs text-slate-400 font-mono">
+                                {colorCodeFor(item.product.productNumber, item.product.colorCodes, item.color) ?? item.product.productNumber}
+                              </span>
+                            )}
                             {item.isOnSale && (
                               <span className="text-xs font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded ml-1 inline-block whitespace-nowrap">
                                 {getSaleLabel(item.saleType, item.saleValue)}

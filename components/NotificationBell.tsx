@@ -40,7 +40,7 @@ export default function NotificationBell() {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 mt-2 w-80 max-w-[90vw] bg-white rounded-xl shadow-lg border border-slate-100 z-50 max-h-96 overflow-y-auto">
+          <div className="fixed inset-x-4 top-24 md:absolute md:inset-x-auto md:top-auto md:right-0 md:mt-2 md:w-80 bg-white rounded-xl shadow-lg border border-slate-100 z-50 max-h-96 overflow-y-auto">
             <div className="px-4 py-3 border-b border-slate-100 font-semibold text-sm text-slate-700">{t('notice.bellTitle')}</div>
             {notices.length === 0 ? (
               <p className="px-4 py-8 text-center text-sm text-slate-400">{t('notice.empty')}</p>

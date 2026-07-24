@@ -15,8 +15,8 @@ export default function NoticePopup() {
   const { title, content } = localizeNotice(current, t, i18n.language);
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm max-h-[85vh] overflow-y-auto p-6 space-y-4">
+    <div className="fixed inset-0 bg-black/40 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm max-h-[85dvh] overflow-y-auto p-6 space-y-4 my-8 sm:my-0">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold px-2 py-1 rounded-lg bg-primary-50 text-primary-600">
             {t(`notice.type.${current.type.toLowerCase()}`)}
@@ -25,8 +25,8 @@ export default function NoticePopup() {
             <span className="text-xs text-slate-400">1 / {queue.length}</span>
           )}
         </div>
-        <h3 className="font-bold text-slate-800">{title}</h3>
-        <p className="text-sm text-slate-600 whitespace-pre-wrap">{content}</p>
+        <h3 className="font-bold text-slate-800 break-words">{title}</h3>
+        <p className="text-sm text-slate-600 whitespace-pre-wrap break-words">{content}</p>
 
         <div className="flex justify-end">
           <button onClick={() => dismissNotice(current.id)} className="btn-primary text-sm px-6">

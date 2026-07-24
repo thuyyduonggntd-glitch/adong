@@ -6,8 +6,11 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
+import ImageLightbox from '@/components/ui/ImageLightbox';
 
-type QnA = { id: string; title: string; content: string; status: string; createdAt: string; answeredAt: string | null; answer: string | null; user: { name: string }; images: string[] };
+type QnA = { id: string; title: string; content: string; category: string; status: string; createdAt: string; answeredAt: string | null; answer: string | null; user: { name: string }; images: string[] };
+
+const QNA_CATEGORIES = ['PRODUCT', 'ORDER', 'ARRIVAL', 'PAYMENT', 'DELIVERY', 'OTHER'] as const;
 
 export default function QnAPage() {
   const { t } = useTranslation();
@@ -23,10 +26,11 @@ export default function QnAPage() {
   const [list, setList]         = useState<QnA[]>([]);
   const [loading, setLoading]   = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm]         = useState({ title: '', content: '' });
+  const [form, setForm]         = useState({ category: '', title: '', content: '' });
   const [previewFiles, setPreviewFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [lightbox, setLightbox] = useState<string | null>(null);
 
   useEffect(() => {
     if (session) {
@@ -63,6 +67,7 @@ export default function QnAPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!session) { router.push('/login'); return; }
+    if (!form.category) { alert(t('qna.categoryRequired')); return; }
     setSubmitting(true);
 
     let uploadedUrls: string[] = [];
@@ -77,13 +82,13 @@ export default function QnAPage() {
     const res = await fetch('/api/qna', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: form.title, content: form.content, images: uploadedUrls }),
+      body: JSON.stringify({ title: form.title, content: form.content, category: form.category, images: uploadedUrls }),
     });
 
     if (res.ok) {
       const newItem = await res.json();
       setList((prev) => [{ ...newItem, user: { name: session.user?.name || '' } }, ...prev]);
-      setForm({ title: '', content: '' });
+      setForm({ category: '', title: '', content: '' });
       setPreviewFiles([]);
       setPreviews([]);
       setShowForm(false);
@@ -91,9 +96,15 @@ export default function QnAPage() {
     setSubmitting(false);
   };
 
+  const handleDelete = async (id: string) => {
+    if (!confirm(t('qna.deleteConfirm'))) return;
+    const res = await fetch(`/api/qna/${id}`, { method: 'DELETE' });
+    if (res.ok) setList((prev) => prev.filter((q) => q.id !== id));
+  };
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      {lightbox && <ImageLightbox src={lightbox} onClose={() => setLightbox(null)} />}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-slate-800">{t('nav.qna')}</h1>
         {session && (
@@ -111,6 +122,23 @@ export default function QnAPage() {
       {showForm && (
         <form onSubmit={handleSubmit} className="card p-6 mb-6 space-y-4">
           <h2 className="font-semibold text-slate-800">{t('qna.writeFormTitle')}</h2>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">{t('qna.categoryLabel')}</label>
+            <div className="flex flex-wrap gap-2">
+              {QNA_CATEGORIES.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setForm({ ...form, category: c })}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                    form.category === c ? 'bg-primary-600 text-white' : 'bg-white text-slate-600 border border-slate-200'
+                  }`}
+                >
+                  {t(`qna.category.${c}`)}
+                </button>
+              ))}
+            </div>
+          </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">{t('qna.subjectLabel')}</label>
             <input className="input" placeholder={t('qna.subjectPlaceholder')} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
@@ -178,11 +206,17 @@ export default function QnAPage() {
                 <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-100">
                   <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
                     <span className={`badge text-xs flex-shrink-0 ${st.color}`}>{st.label}</span>
+                    <span className="badge text-xs flex-shrink-0 bg-blue-50 text-blue-600">{t(`qna.category.${item.category}`)}</span>
                     <span className="font-semibold text-slate-800 truncate">{item.title}</span>
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="text-xs text-slate-400">{item.user.name}</p>
                     <p className="text-xs text-slate-300 mt-0.5">{formatDate(item.createdAt)}</p>
+                    {item.status === 'PENDING' && (
+                      <button onClick={() => handleDelete(item.id)} className="text-xs text-red-400 hover:text-red-600 mt-1">
+                        {t('qna.delete')}
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -193,9 +227,10 @@ export default function QnAPage() {
                   {item.images && item.images.length > 0 && (
                     <div className="flex flex-wrap gap-2 mt-3">
                       {item.images.map((src, i) => (
-                        <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-slate-100">
+                        <button key={i} type="button" onClick={() => setLightbox(src)}
+                          className="relative w-16 h-16 rounded-lg overflow-hidden border border-slate-100 cursor-zoom-in">
                           <Image src={src} alt="" fill className="object-cover" />
-                        </div>
+                        </button>
                       ))}
                     </div>
                   )}

@@ -42,6 +42,9 @@ export async function DELETE(_: NextRequest, { params }: { params: { id: string 
   const isAdmin = hasAdminAccess((session.user as any)?.role);
   const isOwner = qna.userId === (session.user as any)?.id;
   if (!isAdmin && !isOwner) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!isAdmin && qna.status !== 'PENDING') {
+    return NextResponse.json({ error: '답변이 완료된 문의는 삭제할 수 없습니다.' }, { status: 403 });
+  }
 
   await prisma.qnA.delete({ where: { id: params.id } });
   return NextResponse.json({ ok: true });

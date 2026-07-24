@@ -3,13 +3,18 @@ import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { formatDate } from '@/lib/utils';
 import Pagination from '@/components/ui/Pagination';
+import ImageLightbox from '@/components/ui/ImageLightbox';
 
 const PAGE_SIZE = 50;
 
 type QnA = {
-  id: string; title: string; content: string; status: string;
+  id: string; title: string; content: string; category: string; status: string;
   images: string[]; answer: string | null; answeredAt: string | null; createdAt: string;
   user: { name: string; email: string };
+};
+
+const CATEGORY_MAP: Record<string, string> = {
+  PRODUCT: '상품', ORDER: '주문', ARRIVAL: '입고', PAYMENT: '결제', DELIVERY: '배송', OTHER: '기타',
 };
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
@@ -26,6 +31,7 @@ export default function AdminQnAPage() {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [saving, setSaving]   = useState<string | null>(null);
   const [page, setPage]       = useState(1);
+  const [lightbox, setLightbox] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/api/qna').then((r) => r.json()).then((d) => { setList(d); setLoading(false); });
@@ -56,6 +62,7 @@ export default function AdminQnAPage() {
 
   return (
     <div>
+      {lightbox && <ImageLightbox src={lightbox} onClose={() => setLightbox(null)} />}
       <h1 className="text-2xl font-bold text-slate-800 mb-6">문의 관리</h1>
 
       <div className="flex gap-2 mb-6">
@@ -84,6 +91,7 @@ export default function AdminQnAPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className={`badge text-xs ${st.color}`}>{st.label}</span>
+                      <span className="badge text-xs bg-blue-50 text-blue-600">{CATEGORY_MAP[item.category] || item.category}</span>
                       <span className="text-xs text-slate-400">{formatDate(item.createdAt)}</span>
                     </div>
                     <p className="font-medium text-slate-800 truncate">{item.title}</p>
@@ -111,9 +119,10 @@ export default function AdminQnAPage() {
                       {item.images.length > 0 && (
                         <div className="flex gap-2 mt-2 flex-wrap">
                           {item.images.map((img, i) => (
-                            <div key={i} className="relative w-24 h-24 rounded-lg overflow-hidden border border-slate-200">
+                            <button key={i} type="button" onClick={(e) => { e.stopPropagation(); setLightbox(img); }}
+                              className="relative w-24 h-24 rounded-lg overflow-hidden border border-slate-200 cursor-zoom-in">
                               <Image src={img} alt="" fill className="object-cover" />
-                            </div>
+                            </button>
                           ))}
                         </div>
                       )}

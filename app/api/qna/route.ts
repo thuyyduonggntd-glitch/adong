@@ -53,14 +53,18 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { title, content, images } = await req.json();
+  const { title, content, category, images } = await req.json();
   if (!title || !content) return NextResponse.json({ error: '제목과 내용을 입력하세요.' }, { status: 400 });
+
+  const VALID_CATEGORIES = ['PRODUCT', 'ORDER', 'ARRIVAL', 'PAYMENT', 'DELIVERY', 'OTHER'];
+  if (!VALID_CATEGORIES.includes(category)) return NextResponse.json({ error: '문의 유형을 선택하세요.' }, { status: 400 });
 
   const qna = await prisma.qnA.create({
     data: {
       userId: (session.user as any).id,
       title,
       content,
+      category,
       images: images || [],
     },
   });

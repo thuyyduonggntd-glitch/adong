@@ -44,6 +44,15 @@ enum QnAStatus {
   CLOSED
 }
 
+enum QnACategory {
+  PRODUCT
+  ORDER
+  ARRIVAL
+  PAYMENT
+  DELIVERY
+  OTHER
+}
+
 enum NoticeType {
   MANUAL
   SALE
@@ -315,6 +324,7 @@ model QnA {
   user       User      @relation(fields: [userId], references: [id])
   title      String
   content    String    @db.Text
+  category   QnACategory @default(OTHER)
   images     String[]
   status     QnAStatus @default(PENDING)
   answer     String?   @db.Text

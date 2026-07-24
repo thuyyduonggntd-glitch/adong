@@ -23,6 +23,17 @@ async function syncUserBalance(userId: string) {
   await prisma.user.update({ where: { id: userId }, data: { depositAmount: (dep._sum.amount ?? 0) - (wd._sum.amount ?? 0) } });
 }
 
+const ARRIVAL_WITHDRAWAL_DESC = '주문 상품 입고';
+
+/** 주어진 시각이 속한 KST 달력일의 [00:00, 24:00) 구간을 UTC 기준으로 반환 */
+function getKstDayRange(d: Date): { start: Date; end: Date } {
+  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  kst.setUTCHours(0, 0, 0, 0);
+  const start = new Date(kst.getTime() - 9 * 60 * 60 * 1000);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { start, end };
+}
+
 /** 품절 처리로 true가 됐던 색상+사이즈 품절 플래그를, 품절 상태를 벗어나는 항목에 한해 원래대로(false) 복구 */
 async function restoreOutOfStockFlags(itemIds: string[]) {
   const items = await prisma.orderItem.findMany({
@@ -315,16 +326,24 @@ export async function PATCH(req: NextRequest) {
     await prisma.order.update({ where: { id: orderId }, data: { status: 'CONFIRMED' } });
   }
 
-  // 새로 입고된 항목만 출금 거래 생성
+  // 새로 입고된 항목만 출금 거래 생성 (같은 날짜에 이미 입고 출금 거래가 있으면 금액만 합산)
   const byUser = new Map<string, number>();
   for (const item of notYetArrived) {
     const uid = item.order.userId;
     byUser.set(uid, (byUser.get(uid) ?? 0) + item.price * item.quantity);
   }
+  const { start: dayStart, end: dayEnd } = getKstDayRange(date);
   for (const [uid, amount] of Array.from(byUser)) {
-    await prisma.transaction.create({
-      data: { userId: uid, type: 'WITHDRAWAL', amount, description: '주문 상품 입고', date },
+    const existing = await prisma.transaction.findFirst({
+      where: { userId: uid, type: 'WITHDRAWAL', description: ARRIVAL_WITHDRAWAL_DESC, date: { gte: dayStart, lt: dayEnd } },
     });
+    if (existing) {
+      await prisma.transaction.update({ where: { id: existing.id }, data: { amount: existing.amount + amount } });
+    } else {
+      await prisma.transaction.create({
+        data: { userId: uid, type: 'WITHDRAWAL', amount, description: ARRIVAL_WITHDRAWAL_DESC, date },
+      });
+    }
     await syncUserBalance(uid);
   }
 

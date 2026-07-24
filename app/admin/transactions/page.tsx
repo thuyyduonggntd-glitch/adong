@@ -16,32 +16,19 @@ type TxEntry = {
   description: string | null; date: string;
 };
 
-type OrderEntry = {
-  id: string; totalAmount: number; status: string; createdAt: string;
-  items: Array<{ product: { name: string } }>;
-};
-
 type LedgerRow = {
   key: string; date: string;
-  category: '판매' | '입금' | '출금';
+  category: '입금' | '출금';
   content: string; amount: number; balance: number;
-  sourceId: string; sourceType: 'tx' | 'order';
+  sourceId: string; sourceType: 'tx';
 };
 
-function buildLedger(orders: OrderEntry[], txs: TxEntry[]): LedgerRow[] {
+function buildLedger(txs: TxEntry[]): LedgerRow[] {
   const entries: Array<{
-    date: string; category: '판매' | '입금' | '출금';
-    content: string; amount: number; sourceId: string; sourceType: 'tx' | 'order';
+    date: string; category: '입금' | '출금';
+    content: string; amount: number; sourceId: string; sourceType: 'tx';
   }> = [];
 
-  for (const o of orders) {
-    if (o.status === 'CANCELLED') continue;
-    entries.push({
-      date: o.createdAt, category: '판매',
-      content: `주문 #${o.id.slice(-8).toUpperCase()} (${o.items.map((i) => i.product.name).join(', ')})`,
-      amount: o.totalAmount, sourceId: o.id, sourceType: 'order',
-    });
-  }
   for (const t of txs) {
     entries.push({
       date: t.date, category: t.type === 'DEPOSIT' ? '입금' : '출금',
@@ -52,9 +39,8 @@ function buildLedger(orders: OrderEntry[], txs: TxEntry[]): LedgerRow[] {
   entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   let balance = 0;
   return entries.map((e, i) => {
-    if (e.category === '판매')       balance += e.amount;
-    else if (e.category === '입금') balance -= e.amount;
-    else                             balance += e.amount;
+    if (e.category === '출금') balance += e.amount;
+    else                       balance -= e.amount;
     return { key: `${e.sourceType}-${e.sourceId}-${i}`, ...e, balance };
   }).reverse();
 }
@@ -70,7 +56,7 @@ export default function AdminTransactionsPage() {
   const [ledgerPage, setLedgerPage] = useState(1);
 
   /* 펼쳐진 회원의 데이터 캐시 */
-  const [cache, setCache] = useState<Record<string, { orders: OrderEntry[]; txs: TxEntry[]; loaded: boolean }>>({});
+  const [cache, setCache] = useState<Record<string, { txs: TxEntry[]; loaded: boolean }>>({});
 
   /* 거래 추가 폼 */
   const [txForm, setTxForm] = useState({
@@ -92,16 +78,12 @@ export default function AdminTransactionsPage() {
   /* 특정 회원 데이터 로드 */
   const loadUserData = async (userId: string) => {
     if (cache[userId]?.loaded) return;
-    setCache((c) => ({ ...c, [userId]: { orders: [], txs: [], loaded: false } }));
-    const [orders, txs] = await Promise.all([
-      fetch(`/api/orders?admin=1&userId=${userId}`).then((r) => r.json()),
-      fetch(`/api/transactions?userId=${userId}`).then((r) => r.json()),
-    ]);
+    setCache((c) => ({ ...c, [userId]: { txs: [], loaded: false } }));
+    const txs = await fetch(`/api/transactions?userId=${userId}`).then((r) => r.json());
     setCache((c) => ({
       ...c,
       [userId]: {
-        orders: Array.isArray(orders) ? orders : [],
-        txs:    Array.isArray(txs)    ? txs    : [],
+        txs:    Array.isArray(txs) ? txs : [],
         loaded: true,
       },
     }));
@@ -181,7 +163,7 @@ export default function AdminTransactionsPage() {
           <span className="text-slate-500">총 <strong className="text-slate-800">{filtered.length}명</strong></span>
           <span className="text-slate-500">전체 매출 <strong className="text-slate-800">{formatPrice(filtered.reduce((s, u) => s + u.totalSales, 0))}</strong></span>
           <span className="text-slate-500">전체 입금 <strong className="text-green-700">{formatPrice(filtered.reduce((s, u) => s + u.depositAmount, 0))}</strong></span>
-          <span className="text-slate-500">전체 미수금 <strong className="text-red-600">{formatPrice(filtered.reduce((s, u) => s + Math.max(0, u.totalSales - u.depositAmount), 0))}</strong></span>
+          <span className="text-slate-500">전체 미수금 <strong className="text-red-600">{formatPrice(filtered.reduce((s, u) => s + Math.max(0, -u.depositAmount), 0))}</strong></span>
         </div>
       )}
 
@@ -192,10 +174,10 @@ export default function AdminTransactionsPage() {
       ) : (
         <div className="space-y-2">
           {filtered.map((user) => {
-            const outstanding = user.totalSales - user.depositAmount;
+            const outstanding = -user.depositAmount;
             const isOpen      = openId === user.id;
             const data        = cache[user.id];
-            const ledger      = data?.loaded ? buildLedger(data.orders, data.txs) : [];
+            const ledger      = data?.loaded ? buildLedger(data.txs) : [];
             const ledgerTotalPages = Math.max(1, Math.ceil(ledger.length / PAGE_SIZE));
             const pagedLedger = isOpen ? ledger.slice((ledgerPage - 1) * PAGE_SIZE, ledgerPage * PAGE_SIZE) : [];
 
@@ -296,8 +278,8 @@ export default function AdminTransactionsPage() {
                               <th className="px-4 py-2.5">날짜</th>
                               <th className="px-4 py-2.5">구분</th>
                               <th className="px-4 py-2.5">내용</th>
-                              <th className="px-4 py-2.5 text-right">매출</th>
-                              <th className="px-4 py-2.5 text-right">입금 / 출금</th>
+                              <th className="px-4 py-2.5 text-right">입금</th>
+                              <th className="px-4 py-2.5 text-right">출금</th>
                               <th className="px-4 py-2.5 text-right">잔액(미수금)</th>
                               <th className="px-4 py-2.5 w-20" />
                             </tr>
@@ -335,23 +317,17 @@ export default function AdminTransactionsPage() {
                                     </td>
                                     <td className="px-4 py-2.5">
                                       <span className={`badge text-xs ${
-                                        row.category === '판매' ? 'bg-orange-100 text-orange-700' :
-                                        row.category === '입금' ? 'bg-green-100 text-green-700' :
-                                                                   'bg-red-100 text-red-600'
+                                        row.category === '입금' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
                                       }`}>{row.category}</span>
                                     </td>
                                     <td className="px-4 py-2.5 text-slate-600 max-w-[200px] truncate" title={row.content}>
                                       {row.content}
                                     </td>
-                                    <td className="px-4 py-2.5 text-right font-semibold text-orange-600">
-                                      {row.category === '판매' ? formatPrice(row.amount) : ''}
+                                    <td className="px-4 py-2.5 text-right font-semibold text-green-600">
+                                      {row.category === '입금' ? formatPrice(row.amount) : ''}
                                     </td>
-                                    <td className={`px-4 py-2.5 text-right font-semibold ${
-                                      row.category === '입금' ? 'text-green-600' :
-                                      row.category === '출금' ? 'text-red-500' : ''
-                                    }`}>
-                                      {row.category === '입금' ? formatPrice(row.amount) :
-                                       row.category === '출금' ? `-${formatPrice(row.amount)}` : ''}
+                                    <td className="px-4 py-2.5 text-right font-semibold text-red-500">
+                                      {row.category === '출금' ? formatPrice(row.amount) : ''}
                                     </td>
                                     <td className={`px-4 py-2.5 text-right font-bold ${
                                       row.balance > 0 ? 'text-red-600' :
@@ -390,26 +366,28 @@ export default function AdminTransactionsPage() {
 
                           {/* 합계 행 */}
                           <tfoot className="border-t-2 border-slate-200 bg-slate-50">
-                            <tr className="font-bold text-sm">
-                              <td colSpan={3} className="px-4 py-3 text-xs text-slate-500">합계 / 최종 잔액</td>
-                              <td className="px-4 py-3 text-right text-orange-600">
-                                {formatPrice(ledger.filter((r) => r.category === '판매').reduce((s, r) => s + r.amount, 0))}
-                              </td>
-                              <td className="px-4 py-3 text-right text-green-600">
-                                {formatPrice(
-                                  ledger.filter((r) => r.category === '입금').reduce((s, r) => s + r.amount, 0) -
-                                  ledger.filter((r) => r.category === '출금').reduce((s, r) => s + r.amount, 0)
-                                )}
-                              </td>
-                              <td className={`px-4 py-3 text-right ${outstanding > 0 ? 'text-red-600' : outstanding < 0 ? 'text-blue-500' : 'text-green-600'}`}>
-                                {outstanding > 0
-                                  ? `미수금 ${formatPrice(outstanding)}`
-                                  : outstanding < 0
-                                  ? `초과 ${formatPrice(Math.abs(outstanding))}`
-                                  : '정산완료'}
-                              </td>
-                              <td />
-                            </tr>
+                            {(() => {
+                              const finalBalance = ledger.length > 0 ? ledger[0].balance : 0;
+                              return (
+                                <tr className="font-bold text-sm">
+                                  <td colSpan={3} className="px-4 py-3 text-xs text-slate-500">합계 / 최종 잔액</td>
+                                  <td className="px-4 py-3 text-right text-green-600">
+                                    {formatPrice(ledger.filter((r) => r.category === '입금').reduce((s, r) => s + r.amount, 0))}
+                                  </td>
+                                  <td className="px-4 py-3 text-right text-red-500">
+                                    {formatPrice(ledger.filter((r) => r.category === '출금').reduce((s, r) => s + r.amount, 0))}
+                                  </td>
+                                  <td className={`px-4 py-3 text-right ${finalBalance > 0 ? 'text-red-600' : finalBalance < 0 ? 'text-blue-500' : 'text-green-600'}`}>
+                                    {finalBalance > 0
+                                      ? `미수금 ${formatPrice(finalBalance)}`
+                                      : finalBalance < 0
+                                      ? `초과 ${formatPrice(Math.abs(finalBalance))}`
+                                      : '정산완료'}
+                                  </td>
+                                  <td />
+                                </tr>
+                              );
+                            })()}
                           </tfoot>
                         </table>
                       </div>

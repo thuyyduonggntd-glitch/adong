@@ -6,6 +6,7 @@ import { printInboundRows, type InboundPrintRow } from '@/lib/printInbound';
 import EditPriceModal from '@/components/admin/EditPriceModal';
 import BrandPriceModal, { type BrandModalRow } from '@/components/admin/BrandPriceModal';
 import { resolveColorImage } from '@/lib/productImages';
+import { colorCodeFor } from '@/lib/productColorCode';
 
 type DailyRow = InboundPrintRow & { id: string; price: number | null };
 
@@ -15,6 +16,7 @@ type SaleProduct = {
   colorImages?: { color: string; imageUrl: string }[];
   isOnSale: boolean; saleType: string | null; saleValue: number | null;
   productNumber?: string | null;
+  colorCodes?: { color: string; sequence: number }[];
 };
 type AdminProduct = SaleProduct & { category: { name: string } };
 /* 세일 스냅샷: OrderItem/InboundItem 자체에 저장된 "주문·입고 당시" 세일 상태 (실시간 product.isOnSale 아님) */
@@ -52,6 +54,7 @@ type OutStockUnshippedItem = SaleSnapshot & {
 type InboundProduct = {
   id: string; name: string; images: string[]; brand: string | null;
   sizes: string[]; colors: string[]; productNumber?: string | null;
+  colorCodes?: { color: string; sequence: number }[];
 };
 type InboundRec = {
   id: string; brand: string; note: string | null; arrivedAt: string;
@@ -124,7 +127,11 @@ function ProductCells({ product, brand, size, color, quantity, price, isOnSale, 
       </td>
       <td className="px-3 py-3 font-medium text-slate-800 max-w-[150px]">
         <span className="block truncate">{product.name}</span>
-        {product.productNumber && <span className="block text-xs text-slate-400 font-mono">{product.productNumber}</span>}
+        {product.productNumber && (
+          <span className="block text-xs text-slate-400 font-mono">
+            {colorCodeFor(product.productNumber, product.colorCodes, color) ?? product.productNumber}
+          </span>
+        )}
       </td>
       <td className="px-3 py-3 text-xs text-slate-600">{size || '-'}</td>
       <td className="px-3 py-3 text-xs text-slate-600">{color || '-'}</td>
@@ -646,7 +653,11 @@ function InboundSection({ inbounds, onDelete, showForm, onEditPrice, onBrandClic
                       </td>
                       <td className="px-4 py-2.5 font-medium max-w-[180px]">
                         <span className="block truncate">{it.name}</span>
-                        {p?.productNumber && <span className="block text-xs text-slate-400 font-mono">{p.productNumber}</span>}
+                        {p?.productNumber && (
+                          <span className="block text-xs text-slate-400 font-mono">
+                            {colorCodeFor(p.productNumber, p.colorCodes, it.color) ?? p.productNumber}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-2.5 text-slate-500 text-xs">{it.size || '-'}</td>
                       <td className="px-4 py-2.5 text-slate-500 text-xs">{it.color || '-'}</td>
@@ -767,7 +778,11 @@ function BrandAccordionRow({ brand, items, isOpen, onToggle }: { brand: string; 
                             </span>
                           )}
                         </span>
-                        {g.product.productNumber && <span className="block text-xs text-slate-400 font-mono">{g.product.productNumber}</span>}
+                        {g.product.productNumber && (
+                          <span className="block text-xs text-slate-400 font-mono">
+                            {colorCodeFor(g.product.productNumber, g.product.colorCodes, g.color) ?? g.product.productNumber}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-2.5 text-xs text-slate-600">{g.size || '-'}</td>
                       <td className="px-4 py-2.5 text-xs text-slate-600">{g.color || '-'}</td>
@@ -1522,7 +1537,7 @@ export default function AdminOrdersPage() {
                     brand: item.product?.brand || ib.brand,
                     image: item.product?.images?.[0] ?? null,
                     name: item.product?.name || item.name,
-                    productNumber: item.product?.productNumber ?? null,
+                    productNumber: colorCodeFor(item.product?.productNumber, item.product?.colorCodes, item.color) ?? item.product?.productNumber ?? null,
                     isOnSale: item.isOnSale,
                     saleType: item.saleType,
                     saleValue: item.saleValue,
@@ -1542,7 +1557,7 @@ export default function AdminOrdersPage() {
                   brand: it.product.brand || '-',
                   image: it.product.images?.[0] ?? null,
                   name: it.product.name,
-                  productNumber: it.product.productNumber ?? null,
+                  productNumber: colorCodeFor(it.product.productNumber, it.product.colorCodes, it.color) ?? it.product.productNumber ?? null,
                   isOnSale: it.isOnSale,
                   saleType: it.saleType,
                   saleValue: it.saleValue,

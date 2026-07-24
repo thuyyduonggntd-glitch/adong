@@ -62,6 +62,7 @@ export default function NewProductPage() {
   const [images, setImages]         = useState<string[]>([]);
   const [sizeImages, setSizeImages] = useState<string[]>([]);
   const [colorImages, setColorImages] = useState<Record<string, string>>({});
+  const [colorSequences, setColorSequences] = useState<Record<string, number>>({});
   const [colorPicker, setColorPicker] = useState<string | null>(null);
   const [sizeInput, setSizeInput]   = useState('');
   const [colorInput, setColorInput] = useState('');
@@ -153,10 +154,18 @@ export default function NewProductPage() {
     set('sizes', form.sizes.filter((x) => x !== s));
     setSizeExtraPrices((prev) => { const next = { ...prev }; delete next[s]; return next; });
   };
-  const addColor = () => { if (colorInput && !form.colors.includes(colorInput)) { set('colors', [...form.colors, colorInput]); setColorInput(''); } };
+  const addColor = () => {
+    if (colorInput && !form.colors.includes(colorInput)) {
+      set('colors', [...form.colors, colorInput]);
+      const nextSeq = Object.values(colorSequences).reduce((max, n) => Math.max(max, n), 0) + 1;
+      setColorSequences((prev) => ({ ...prev, [colorInput]: nextSeq }));
+      setColorInput('');
+    }
+  };
   const removeColor = (c: string) => {
     set('colors', form.colors.filter((x) => x !== c));
     setColorImages((prev) => { const next = { ...prev }; delete next[c]; return next; });
+    setColorSequences((prev) => { const next = { ...prev }; delete next[c]; return next; });
   };
 
   const uploadColorImage = async (file: File, color: string) => {
@@ -209,6 +218,7 @@ export default function NewProductPage() {
         prices:          gradePrices,
         variants,
         colorImages:     Object.entries(colorImages).map(([color, imageUrl]) => ({ color, imageUrl })),
+        colorCodes:      form.colors.map((color, i) => ({ color, sequence: colorSequences[color] ?? i + 1 })),
         sizeExtraPrices: Object.keys(extraPricesObj).length ? extraPricesObj : null,
       }),
     });
@@ -443,10 +453,22 @@ export default function NewProductPage() {
               <input className="input text-sm flex-1" placeholder="화이트" value={colorInput} onChange={(e) => setColorInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addColor())} />
               <button type="button" onClick={addColor} className="btn-outline text-sm px-3">추가</button>
             </div>
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-2">
               {form.colors.map((c) => (
-                <span key={c} className="badge bg-slate-100 text-slate-600 text-xs">
-                  {c}<button type="button" onClick={() => removeColor(c)} className="ml-1">×</button>
+                <span key={c} className="badge bg-slate-100 text-slate-600 text-xs flex items-center gap-1">
+                  {c}
+                  {form.productNumber && (
+                    <span className="text-slate-400 font-mono">
+                      {form.productNumber}_
+                      <input
+                        type="number" min={1} max={999}
+                        value={colorSequences[c] ?? ''}
+                        onChange={(e) => setColorSequences((prev) => ({ ...prev, [c]: Number(e.target.value) }))}
+                        className="w-10 bg-transparent border-b border-slate-300 text-slate-500 font-mono focus:outline-none focus:border-primary-400"
+                      />
+                    </span>
+                  )}
+                  <button type="button" onClick={() => removeColor(c)} className="ml-1">×</button>
                 </span>
               ))}
             </div>

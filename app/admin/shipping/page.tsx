@@ -3,6 +3,7 @@ import { useEffect, useState, useMemo } from 'react';
 import Image from 'next/image';
 import { formatPrice } from '@/lib/utils';
 import Pagination from '@/components/ui/Pagination';
+import { colorCodeFor } from '@/lib/productColorCode';
 
 const PAGE_SIZE = 50;
 
@@ -41,7 +42,7 @@ type UserGroup = { userId: string; userName: string; userEmail: string; dateGrou
 type DeliveredOrderItem = {
   id: string; quantity: number; price: number; size: string; color: string;
   isOnSale?: boolean; saleType?: string | null; saleValue?: number | null;
-  product: { name: string; brand: string | null; images: string[]; productNumber?: string | null };
+  product: { name: string; brand: string | null; images: string[]; productNumber?: string | null; colorCodes?: { color: string; sequence: number }[] };
 };
 type ShippingRecord = {
   id: string; orderId: string; userId: string;
@@ -187,7 +188,7 @@ export default function AdminShippingPage() {
         image:               it.product?.images?.[0] ?? '',
         brand:               it.product?.brand ?? '-',
         name:                it.product?.name  ?? '-',
-        productNumber:       it.product?.productNumber ?? null,
+        productNumber:       colorCodeFor(it.product?.productNumber, it.product?.colorCodes, it.color) ?? it.product?.productNumber ?? null,
         isOnSale:            it.isOnSale ?? false,
         saleType:            it.saleType ?? null,
         saleValue:           it.saleValue ?? null,
@@ -212,7 +213,7 @@ export default function AdminShippingPage() {
           userEmail: ib.user.email,
           brand:     item.product?.brand ?? ib.brand,
           name:      item.product?.name  ?? item.name,
-          productNumber: item.product?.productNumber ?? null,
+          productNumber: colorCodeFor(item.product?.productNumber, item.product?.colorCodes, item.color) ?? item.product?.productNumber ?? null,
           isOnSale:  item.isOnSale ?? false,
           saleType:  item.saleType ?? null,
           saleValue: item.saleValue ?? null,
@@ -668,7 +669,11 @@ export default function AdminShippingPage() {
                                           </td>
                                           <td className="px-4 py-2.5 font-medium text-slate-800 max-w-[140px]">
                                             <span className="block truncate">{it.product.name}</span>
-                                            {it.product.productNumber && <span className="block text-xs text-slate-400 font-mono">{it.product.productNumber}</span>}
+                                            {it.product.productNumber && (
+                                              <span className="block text-xs text-slate-400 font-mono">
+                                                {colorCodeFor(it.product.productNumber, it.product.colorCodes, it.color) ?? it.product.productNumber}
+                                              </span>
+                                            )}
                                           </td>
                                           <td className="px-4 py-2.5 text-center text-xs text-slate-500">{it.size || '-'}</td>
                                           <td className="px-4 py-2.5 text-center text-xs text-slate-500">{it.color || '-'}</td>

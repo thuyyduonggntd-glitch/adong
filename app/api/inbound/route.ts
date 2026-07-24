@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
     where,
     include: {
       user: { select: { id: true, name: true, email: true } },
-      items: { include: { product: { select: { id: true, name: true, images: true, brand: true, isOnSale: true, saleType: true, saleValue: true, sizes: true, colors: true, productNumber: true } } } },
+      items: { include: { product: { select: { id: true, name: true, images: true, brand: true, isOnSale: true, saleType: true, saleValue: true, sizes: true, colors: true, colorCodes: { select: { color: true, sequence: true } }, productNumber: true } } } },
     },
     orderBy: { arrivedAt: 'desc' },
   });
@@ -136,7 +136,7 @@ export async function POST(req: NextRequest) {
     },
     include: {
       user: { select: { id: true, name: true, email: true } },
-      items: { include: { product: { select: { id: true, name: true, images: true, brand: true, isOnSale: true, saleType: true, saleValue: true, sizes: true, colors: true, productNumber: true } } } },
+      items: { include: { product: { select: { id: true, name: true, images: true, brand: true, isOnSale: true, saleType: true, saleValue: true, sizes: true, colors: true, colorCodes: { select: { color: true, sequence: true } }, productNumber: true } } } },
     },
   });
   return NextResponse.json(inbound);

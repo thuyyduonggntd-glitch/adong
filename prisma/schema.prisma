@@ -172,6 +172,7 @@ model Product {
   inboundItems   InboundItem[]
   variants       ProductVariant[]
   colorImages    ProductColorImage[]
+  colorCodes     ProductColorCode[]
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
@@ -197,6 +198,18 @@ model ProductColorImage {
   color     String
   imageUrl  String
   createdAt DateTime @default(now())
+
+  @@unique([productId, color])
+}
+
+// 색상별 제품번호 순번 — 표시용 코드는 `{productNumber}_{seq를 3자리로}` 로 조합해서 계산한다.
+// 순번은 색상이 삭제되기 전까지 고정되며(재정렬/신규색상 추가에 영향받지 않음), 관리자가 직접 덮어쓸 수 있다.
+model ProductColorCode {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  color     String
+  sequence  Int
 
   @@unique([productId, color])
 }

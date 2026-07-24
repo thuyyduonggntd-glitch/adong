@@ -22,6 +22,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       prices: true,
       variants: true,
       colorImages: true,
+      colorCodes: true,
       reviews: { include: { user: { select: { name: true } } }, orderBy: { createdAt: 'desc' }, take: 20 },
     },
   });
@@ -43,7 +44,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const d = await req.json();
-  const { prices: gradePrice, variants, colorImages, ...rest } = d;
+  const { prices: gradePrice, variants, colorImages, colorCodes, ...rest } = d;
 
   const regularPrice = Array.isArray(gradePrice)
     ? gradePrice.find((p: any) => p.grade === 'REGULAR')?.price
@@ -108,11 +109,25 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
   }
 
+  // 색상별 제품번호 순번 upsert — 관리자 화면에서 매번 현재 색상 전체 목록(기존 순번 유지 + 신규색상 자동부여/수동수정 반영)을 보내온다
+  if (Array.isArray(colorCodes)) {
+    await prisma.productColorCode.deleteMany({ where: { productId: params.id } });
+    if (colorCodes.length > 0) {
+      await prisma.productColorCode.createMany({
+        data: colorCodes.map((c: any) => ({
+          productId: params.id,
+          color:     c.color,
+          sequence:  Number(c.sequence),
+        })),
+      });
+    }
+  }
+
   try {
     const product = await prisma.product.update({
       where: { id: params.id },
       data:  updateData,
-      include: { prices: true, variants: true, colorImages: true },
+      include: { prices: true, variants: true, colorImages: true, colorCodes: true },
     });
 
     const displayName = product.brand?.trim() || product.name;

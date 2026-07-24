@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { formatPrice } from '@/lib/utils';
 import Pagination from '@/components/ui/Pagination';
 import { resolveColorImage } from '@/lib/productImages';
+import { colorCodeFor } from '@/lib/productColorCode';
 
 const PAGE_SIZE = 40;
 
@@ -11,6 +12,7 @@ type SaleProduct = {
   id: string; name: string; images: string[]; brand: string | null; colors: string[];
   colorImages?: { color: string; imageUrl: string }[];
   productNumber?: string | null;
+  colorCodes?: { color: string; sequence: number }[];
 };
 /* 세일 스냅샷: OrderItem 자체에 저장된 "주문 당시" 세일 상태 (실시간 product.isOnSale 아님) */
 type CancelledItem = {
@@ -142,7 +144,11 @@ function CancelTable({
                     </td>
                     <td className="px-3 py-3 font-medium text-slate-800 max-w-[150px]">
                       <span className="block truncate">{it.product.name}</span>
-                      {it.product.productNumber && <span className="block text-xs text-slate-400 font-mono">{it.product.productNumber}</span>}
+                      {it.product.productNumber && (
+                        <span className="block text-xs text-slate-400 font-mono">
+                          {colorCodeFor(it.product.productNumber, it.product.colorCodes, it.color) ?? it.product.productNumber}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-3 text-xs text-slate-600">{it.size || '-'}</td>
                     <td className="px-3 py-3 text-xs text-slate-600">{it.color || '-'}</td>

@@ -29,14 +29,14 @@ export async function GET() {
   ]);
 
   const itemInclude = {
-    product: { select: { id: true, name: true, images: true, brand: true, colors: true, colorImages: { select: { color: true, imageUrl: true } }, productNumber: true, isOnSale: true, saleType: true, saleValue: true } },
+    product: { select: { id: true, name: true, images: true, brand: true, colors: true, colorImages: { select: { color: true, imageUrl: true } }, colorCodes: { select: { color: true, sequence: true } }, productNumber: true, isOnSale: true, saleType: true, saleValue: true } },
     order: { select: { id: true, status: true, userId: true, createdAt: true, note: true, user: { select: { name: true, email: true } } } },
   } as const;
 
   const [orders, ousuItems, cancelPolicy, deliveryPolicy, cancelledItems, allArrivedItems, inbound, shipping] = await Promise.all([
     prisma.order.findMany({
       where: { userId },
-      include: { items: { include: { product: { include: { colorImages: { select: { color: true, imageUrl: true } } } } } } },
+      include: { items: { include: { product: { include: { colorImages: { select: { color: true, imageUrl: true } }, colorCodes: { select: { color: true, sequence: true } } } } } } },
       orderBy: { createdAt: 'desc' },
     }),
     prisma.orderItem.findMany({
@@ -66,7 +66,7 @@ export async function GET() {
       where: { userId },
       include: {
         user: { select: { id: true, name: true, email: true } },
-        items: { include: { product: { select: { id: true, name: true, images: true, brand: true, isOnSale: true, saleType: true, saleValue: true, sizes: true, colors: true, colorImages: { select: { color: true, imageUrl: true } }, productNumber: true } } } },
+        items: { include: { product: { select: { id: true, name: true, images: true, brand: true, isOnSale: true, saleType: true, saleValue: true, sizes: true, colors: true, colorImages: { select: { color: true, imageUrl: true } }, colorCodes: { select: { color: true, sequence: true } }, productNumber: true } } } },
       },
       orderBy: { arrivedAt: 'desc' },
     }),
@@ -80,7 +80,7 @@ export async function GET() {
               select: {
                 id: true, quantity: true, price: true, size: true, color: true, arrivedAt: true,
                 isOnSale: true, saleType: true, saleValue: true,
-                product: { select: { name: true, brand: true, images: true, productNumber: true } },
+                product: { select: { name: true, brand: true, images: true, productNumber: true, colorCodes: { select: { color: true, sequence: true } } } },
               },
             },
           },

@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
             product: {
               select: {
                 id: true, name: true, images: true, brand: true, colors: true,
-                isOnSale: true, saleType: true, saleValue: true, productNumber: true,
+                isOnSale: true, saleType: true, saleValue: true, colorCodes: { select: { color: true, sequence: true } }, productNumber: true,
                 category: { select: { name: true } },
               },
             },

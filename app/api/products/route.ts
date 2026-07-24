@@ -15,6 +15,7 @@ const ADMIN_PRODUCT_SELECT = {
   isOnSale: true, saleType: true, saleValue: true, isCarryOver: true,
   gender: true, remark: true,
   sizes: true, colors: true,
+  colorCodes: { select: { color: true, sequence: true } },
   category: { select: { name: true } },
   prices: { select: { grade: true, price: true } },
 } as const;
@@ -88,6 +89,8 @@ export async function POST(req: NextRequest) {
 
   const variantList = (d.variants as { color: string; size: string; isOutOfStock?: boolean }[] | undefined) ?? [];
   const colorImageList = (d.colorImages as { color: string; imageUrl: string }[] | undefined) ?? [];
+  const colorCodeList = (d.colorCodes as { color: string; sequence: number }[] | undefined)
+    ?? (d.colors as string[] | undefined ?? []).map((color: string, i: number) => ({ color, sequence: i + 1 }));
 
   const product = await prisma.product.create({
     data: {
@@ -118,8 +121,11 @@ export async function POST(req: NextRequest) {
       colorImages: colorImageList.length > 0 ? {
         create: colorImageList.map((c) => ({ color: c.color, imageUrl: c.imageUrl })),
       } : undefined,
+      colorCodes: colorCodeList.length > 0 ? {
+        create: colorCodeList.map((c) => ({ color: c.color, sequence: Number(c.sequence) })),
+      } : undefined,
     },
-    include: { prices: true, variants: true, colorImages: true },
+    include: { prices: true, variants: true, colorImages: true, colorCodes: true },
   });
 
   const displayName = product.brand?.trim() || product.name;

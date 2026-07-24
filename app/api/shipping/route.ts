@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
             select: {
               id: true, quantity: true, price: true, size: true, color: true, arrivedAt: true,
               isOnSale: true, saleType: true, saleValue: true,
-              product: { select: { name: true, brand: true, images: true, productNumber: true } },
+              product: { select: { name: true, brand: true, images: true, colorCodes: { select: { color: true, sequence: true } }, productNumber: true } },
             },
           },
         },

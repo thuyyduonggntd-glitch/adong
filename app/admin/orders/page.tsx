@@ -16,7 +16,7 @@ type SaleProduct = {
   colorImages?: { color: string; imageUrl: string }[];
   isOnSale: boolean; saleType: string | null; saleValue: number | null;
   productNumber?: string | null;
-  colorCodes?: { color: string; sequence: number }[];
+  colorCodes?: { color: string; code: string }[];
 };
 type AdminProduct = SaleProduct & { category: { name: string } };
 /* 세일 스냅샷: OrderItem/InboundItem 자체에 저장된 "주문·입고 당시" 세일 상태 (실시간 product.isOnSale 아님) */
@@ -54,7 +54,7 @@ type OutStockUnshippedItem = SaleSnapshot & {
 type InboundProduct = {
   id: string; name: string; images: string[]; brand: string | null;
   sizes: string[]; colors: string[]; productNumber?: string | null;
-  colorCodes?: { color: string; sequence: number }[];
+  colorCodes?: { color: string; code: string }[];
 };
 type InboundRec = {
   id: string; brand: string; note: string | null; arrivedAt: string;

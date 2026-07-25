@@ -86,7 +86,7 @@ export default function EditProductPage() {
   const [images, setImages]         = useState<string[]>([]);
   const [sizeImages, setSizeImages] = useState<string[]>([]);
   const [colorImages, setColorImages] = useState<Record<string, string>>({});
-  const [colorSequences, setColorSequences] = useState<Record<string, number>>({});
+  const [colorSequences, setColorSequences] = useState<Record<string, string>>({});
   const [colorPicker, setColorPicker] = useState<string | null>(null);
   const [sizeInput, setSizeInput]   = useState('');
   const [colorInput, setColorInput] = useState('');
@@ -155,12 +155,12 @@ export default function EditProductPage() {
       setColorImages(
         Object.fromEntries((product.colorImages || []).map((c: { color: string; imageUrl: string }) => [c.color, c.imageUrl]))
       );
-      // 기존 색상별 순번 복원 — 없는 색상은 등록 순서대로 자동 부여
-      const existingSeq = Object.fromEntries((product.colorCodes || []).map((c: { color: string; sequence: number }) => [c.color, c.sequence]));
-      let nextAuto = Object.values(existingSeq).reduce((max: number, n) => Math.max(max, n as number), 0);
-      const seqMap: Record<string, number> = {};
+      // 기존 색상별 코드 복원 — 없는 색상은 등록 순서대로 자동 부여(3자리 숫자)
+      const existingSeq = Object.fromEntries((product.colorCodes || []).map((c: { color: string; code: string }) => [c.color, c.code]));
+      let nextAuto = Object.values(existingSeq).reduce((max: number, code) => Math.max(max, parseInt(code, 10) || 0), 0);
+      const seqMap: Record<string, string> = {};
       (product.colors || []).forEach((color: string) => {
-        seqMap[color] = existingSeq[color] ?? (++nextAuto);
+        seqMap[color] = existingSeq[color] ?? String(++nextAuto).padStart(3, '0');
       });
       setColorSequences(seqMap);
 
@@ -269,8 +269,8 @@ export default function EditProductPage() {
   const addColor = () => {
     if (colorInput && !form.colors.includes(colorInput)) {
       set('colors', [...form.colors, colorInput]);
-      const nextSeq = Object.values(colorSequences).reduce((max, n) => Math.max(max, n), 0) + 1;
-      setColorSequences((prev) => ({ ...prev, [colorInput]: nextSeq }));
+      const nextSeq = Object.values(colorSequences).reduce((max, code) => Math.max(max, parseInt(code, 10) || 0), 0) + 1;
+      setColorSequences((prev) => ({ ...prev, [colorInput]: String(nextSeq).padStart(3, '0') }));
       setColorInput('');
     }
   };
@@ -340,7 +340,7 @@ export default function EditProductPage() {
         prices:          gradePrices,
         variants,
         colorImages:     Object.entries(colorImages).map(([color, imageUrl]) => ({ color, imageUrl })),
-        colorCodes:      form.colors.map((color, i) => ({ color, sequence: colorSequences[color] ?? i + 1 })),
+        colorCodes:      form.colors.map((color, i) => ({ color, code: colorSequences[color] ?? String(i + 1).padStart(3, '0') })),
         sizeExtraPrices: Object.keys(extraPricesObj).length ? extraPricesObj : null,
         ...translationFields,
       }),
@@ -611,10 +611,10 @@ export default function EditProductPage() {
                     <span className="text-slate-400 font-mono">
                       {form.productNumber}_
                       <input
-                        type="number" min={1} max={999}
+                        type="text" maxLength={20}
                         value={colorSequences[c] ?? ''}
-                        onChange={(e) => setColorSequences((prev) => ({ ...prev, [c]: Number(e.target.value) }))}
-                        className="w-10 bg-transparent border-b border-slate-300 text-slate-500 font-mono focus:outline-none focus:border-primary-400"
+                        onChange={(e) => setColorSequences((prev) => ({ ...prev, [c]: e.target.value }))}
+                        className="w-14 bg-transparent border-b border-slate-300 text-slate-500 font-mono focus:outline-none focus:border-primary-400"
                       />
                     </span>
                   )}

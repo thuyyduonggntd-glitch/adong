@@ -12,7 +12,7 @@ export async function getProductPrices(productIds: string[]) {
 
   const products = await prisma.product.findMany({
     where:   { id: { in: productIds } },
-    include: { prices: true, colorImages: { select: { color: true, imageUrl: true } } },
+    include: { prices: true, colorImages: { select: { color: true, imageUrl: true }, orderBy: { sequence: 'asc' } } },
   });
 
   return products.map((product) => {

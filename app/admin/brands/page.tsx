@@ -308,6 +308,7 @@ export default function AdminBrandsPage() {
   const [error, setError]         = useState('');
   const [editError, setEditError] = useState('');
   const [page, setPage]           = useState(1);
+  const [search, setSearch]       = useState('');
 
   const [addImageFile, setAddImageFile]   = useState<File | null>(null);
   const [addSizeFiles, setAddSizeFiles]   = useState<File[]>([]);
@@ -317,9 +318,21 @@ export default function AdminBrandsPage() {
 
   const editImageRef      = useRef<HTMLInputElement>(null);
 
+  const filteredBrands = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return brands;
+    return brands.filter((b) =>
+      b.name.toLowerCase().includes(q) || (b.mallLocation ?? '').toLowerCase().includes(q)
+    );
+  }, [brands, search]);
+
   useEffect(() => {
-    setPage((p) => Math.min(p, Math.max(1, Math.ceil(brands.length / PAGE_SIZE))));
-  }, [brands.length]);
+    setPage((p) => Math.min(p, Math.max(1, Math.ceil(filteredBrands.length / PAGE_SIZE))));
+  }, [filteredBrands.length]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
 
   useEffect(() => {
     fetch('/api/brands').then((r) => r.json()).then((d) => { setBrands(d); setLoading(false); });
@@ -434,8 +447,8 @@ export default function AdminBrandsPage() {
     setBrands((prev) => prev.filter((b) => b.id !== id));
   };
 
-  const totalPages = Math.max(1, Math.ceil(brands.length / PAGE_SIZE));
-  const paged = brands.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(filteredBrands.length / PAGE_SIZE));
+  const paged = filteredBrands.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div>
@@ -453,14 +466,26 @@ export default function AdminBrandsPage() {
         />
       </div>
 
+      {/* 검색 */}
+      <div className="mb-4">
+        <input
+          className="input w-full max-w-sm text-sm"
+          placeholder="브랜드명 또는 쇼핑몰로 검색"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
       {/* 브랜드 목록 */}
       {loading ? (
         <div className="text-center py-16 text-slate-400">로딩 중...</div>
       ) : brands.length === 0 ? (
         <div className="text-center py-16 text-slate-400">등록된 브랜드가 없습니다.</div>
+      ) : filteredBrands.length === 0 ? (
+        <div className="text-center py-16 text-slate-400">검색 결과가 없습니다.</div>
       ) : (
         <div className="space-y-3">
-          <Pagination page={page} totalPages={totalPages} onChange={setPage} summary={`전체 ${brands.length}개 브랜드`} />
+          <Pagination page={page} totalPages={totalPages} onChange={setPage} summary={`전체 ${filteredBrands.length}개 브랜드`} />
           {paged.map((brand) => (
             <div key={brand.id} className="card overflow-hidden">
               {editingId === brand.id ? (

@@ -21,7 +21,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       sizeCategory: true,
       prices: true,
       variants: true,
-      colorImages: true,
+      colorImages: { orderBy: { sequence: 'asc' } },
       colorCodes: true,
       reviews: { include: { user: { select: { name: true } } }, orderBy: { createdAt: 'desc' }, take: 20 },
     },
@@ -117,7 +117,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         data: colorCodes.map((c: any) => ({
           productId: params.id,
           color:     c.color,
-          sequence:  Number(c.sequence),
+          code:      String(c.code),
         })),
       });
     }
@@ -127,7 +127,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const product = await prisma.product.update({
       where: { id: params.id },
       data:  updateData,
-      include: { prices: true, variants: true, colorImages: true, colorCodes: true },
+      include: { prices: true, variants: true, colorImages: { orderBy: { sequence: 'asc' } }, colorCodes: true },
     });
 
     const displayName = product.brand?.trim() || product.name;

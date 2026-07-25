@@ -73,6 +73,16 @@ export async function POST(req: NextRequest) {
         saleValue = regularPrice - salePrice;
       }
 
+      // 색상별 사이즈 목록 → 사이즈 합집합 + 색상별 품절 여부 (수량은 더 이상 관리하지 않음)
+      // 예: 빨강 S,M / 파랑 M,L → 상품 사이즈는 S,M,L, 빨강은 L 품절, 파랑은 S 품절
+      const colorRows = (p.colorRows as { color: string; code?: string; sizes: string[] }[] | undefined) ?? [];
+      const allSizes = Array.from(new Set(colorRows.flatMap(cr => cr.sizes)));
+      const variantList = colorRows.flatMap(cr =>
+        allSizes.map(size => ({ color: cr.color, size, isOutOfStock: !cr.sizes.includes(size) }))
+      );
+      const colorImageList = (p.colorImages as { color: string; imageUrl: string; sequence: number }[] | undefined) ?? [];
+      const colorCodeList = colorRows.filter(cr => cr.code).map(cr => ({ color: cr.color, code: String(cr.code) }));
+
       const base = {
         name:          p.name || '',
         description:   p.description || '',
@@ -88,18 +98,13 @@ export async function POST(req: NextRequest) {
         saleValue,
         categoryId:    category.id,
         sizeCategoryId,
-        sizes:         p.sizes || [],
+        sizes:         allSizes,
         colors:        p.colors || [],
         remark:        p.remark || null,
       };
 
-      // 색상별 사이즈:수량 → variant 목록 (수량은 저장하지 않고 0 이하만 품절로 반영)
-      const colorRows = (p.colorRows as { color: string; sizeQty: { size: string; stock: number }[] }[] | undefined) ?? [];
-      const variantList = colorRows.flatMap(cr => cr.sizeQty.map(sq => ({ color: cr.color, size: sq.size, isOutOfStock: sq.stock <= 0 })));
-      const colorImageList = (p.colorImages as { color: string; imageUrl: string }[] | undefined) ?? [];
-
       if (p.action === 'update' && p.existingId) {
-        // 재업로드 시 재고/색상이미지는 시트 내용으로 전체 덮어쓴다 (시트에 없는 기존 조합은 삭제됨)
+        // 재업로드 시 재고/색상이미지/색상코드는 시트 내용으로 전체 덮어쓴다 (시트에 없는 기존 조합은 삭제됨)
         await prisma.product.update({
           where: { id: p.existingId },
           data:  {
@@ -110,6 +115,7 @@ export async function POST(req: NextRequest) {
             },
             variants: { deleteMany: {}, create: variantList },
             colorImages: { deleteMany: {}, create: colorImageList },
+            colorCodes: { deleteMany: {}, create: colorCodeList },
           },
         });
         results.updated++;
@@ -122,6 +128,7 @@ export async function POST(req: NextRequest) {
             } : undefined,
             variants: variantList.length > 0 ? { create: variantList } : undefined,
             colorImages: colorImageList.length > 0 ? { create: colorImageList } : undefined,
+            colorCodes: colorCodeList.length > 0 ? { create: colorCodeList } : undefined,
           },
         });
         results.created++;

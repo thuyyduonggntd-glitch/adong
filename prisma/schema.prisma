@@ -197,19 +197,20 @@ model ProductColorImage {
   product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   color     String
   imageUrl  String
+  sequence  Int      @default(1)
   createdAt DateTime @default(now())
 
-  @@unique([productId, color])
+  @@unique([productId, color, sequence])
 }
 
-// 색상별 제품번호 순번 — 표시용 코드는 `{productNumber}_{seq를 3자리로}` 로 조합해서 계산한다.
-// 순번은 색상이 삭제되기 전까지 고정되며(재정렬/신규색상 추가에 영향받지 않음), 관리자가 직접 덮어쓸 수 있다.
+// 색상별 표시코드 — 표시용 코드는 `{productNumber}_{code}` 로 조합해서 계산한다.
+// 기본은 상품 내 색상 등장 순서로 자동 채번(001, 002...)되며, 관리자가 직접 덮어쓸 수 있다(영문/숫자 혼용 가능).
 model ProductColorCode {
   id        String  @id @default(cuid())
   productId String
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   color     String
-  sequence  Int
+  code      String
 
   @@unique([productId, color])
 }

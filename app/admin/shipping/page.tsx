@@ -42,7 +42,7 @@ type UserGroup = { userId: string; userName: string; userEmail: string; dateGrou
 type DeliveredOrderItem = {
   id: string; quantity: number; price: number; size: string; color: string;
   isOnSale?: boolean; saleType?: string | null; saleValue?: number | null;
-  product: { name: string; brand: string | null; images: string[]; productNumber?: string | null; colorCodes?: { color: string; sequence: number }[] };
+  product: { name: string; brand: string | null; images: string[]; productNumber?: string | null; colorCodes?: { color: string; code: string }[] };
 };
 type ShippingRecord = {
   id: string; orderId: string; userId: string;

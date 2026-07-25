@@ -12,7 +12,7 @@ type SaleProduct = {
   id: string; name: string; images: string[]; brand: string | null; colors: string[];
   colorImages?: { color: string; imageUrl: string }[];
   productNumber?: string | null;
-  colorCodes?: { color: string; sequence: number }[];
+  colorCodes?: { color: string; code: string }[];
 };
 /* 세일 스냅샷: OrderItem 자체에 저장된 "주문 당시" 세일 상태 (실시간 product.isOnSale 아님) */
 type CancelledItem = {

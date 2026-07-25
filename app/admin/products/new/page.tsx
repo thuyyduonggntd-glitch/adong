@@ -62,7 +62,7 @@ export default function NewProductPage() {
   const [images, setImages]         = useState<string[]>([]);
   const [sizeImages, setSizeImages] = useState<string[]>([]);
   const [colorImages, setColorImages] = useState<Record<string, string>>({});
-  const [colorSequences, setColorSequences] = useState<Record<string, number>>({});
+  const [colorSequences, setColorSequences] = useState<Record<string, string>>({});
   const [colorPicker, setColorPicker] = useState<string | null>(null);
   const [sizeInput, setSizeInput]   = useState('');
   const [colorInput, setColorInput] = useState('');
@@ -157,8 +157,8 @@ export default function NewProductPage() {
   const addColor = () => {
     if (colorInput && !form.colors.includes(colorInput)) {
       set('colors', [...form.colors, colorInput]);
-      const nextSeq = Object.values(colorSequences).reduce((max, n) => Math.max(max, n), 0) + 1;
-      setColorSequences((prev) => ({ ...prev, [colorInput]: nextSeq }));
+      const nextSeq = Object.values(colorSequences).reduce((max, code) => Math.max(max, parseInt(code, 10) || 0), 0) + 1;
+      setColorSequences((prev) => ({ ...prev, [colorInput]: String(nextSeq).padStart(3, '0') }));
       setColorInput('');
     }
   };
@@ -218,7 +218,7 @@ export default function NewProductPage() {
         prices:          gradePrices,
         variants,
         colorImages:     Object.entries(colorImages).map(([color, imageUrl]) => ({ color, imageUrl })),
-        colorCodes:      form.colors.map((color, i) => ({ color, sequence: colorSequences[color] ?? i + 1 })),
+        colorCodes:      form.colors.map((color, i) => ({ color, code: colorSequences[color] ?? String(i + 1).padStart(3, '0') })),
         sizeExtraPrices: Object.keys(extraPricesObj).length ? extraPricesObj : null,
       }),
     });
@@ -461,10 +461,10 @@ export default function NewProductPage() {
                     <span className="text-slate-400 font-mono">
                       {form.productNumber}_
                       <input
-                        type="number" min={1} max={999}
+                        type="text" maxLength={20}
                         value={colorSequences[c] ?? ''}
-                        onChange={(e) => setColorSequences((prev) => ({ ...prev, [c]: Number(e.target.value) }))}
-                        className="w-10 bg-transparent border-b border-slate-300 text-slate-500 font-mono focus:outline-none focus:border-primary-400"
+                        onChange={(e) => setColorSequences((prev) => ({ ...prev, [c]: e.target.value }))}
+                        className="w-14 bg-transparent border-b border-slate-300 text-slate-500 font-mono focus:outline-none focus:border-primary-400"
                       />
                     </span>
                   )}

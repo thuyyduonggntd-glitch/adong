@@ -18,7 +18,7 @@ const PAGE_SIZE = 40;
 type Product = {
   id: string; name: string; images: string[]; colors: string[]; colorImages?: { color: string; imageUrl: string }[]; brand: string | null;
   productNumber?: string | null;
-  colorCodes?: { color: string; sequence: number }[];
+  colorCodes?: { color: string; code: string }[];
   sizeExtraPrices?: Record<string, number> | null;
 };
 /* 세일 스냅샷: OrderItem/InboundItem 자체에 저장된 "주문·입고 당시" 세일 상태 (실시간 product.isOnSale 아님) */
@@ -43,13 +43,13 @@ type OutStockItem = SaleSnapshot & {
 type CancelledItem = SaleSnapshot & {
   id: string; quantity: number; price: number; size: string | null; color: string | null;
   cancelledAt: string;
-  product: { id: string; name: string; images: string[]; brand: string | null; productNumber?: string | null; colorCodes?: { color: string; sequence: number }[] };
+  product: { id: string; name: string; images: string[]; brand: string | null; productNumber?: string | null; colorCodes?: { color: string; code: string }[] };
   order: { id: string; createdAt: string };
 };
 type InboundOrderItem = SaleSnapshot & {
   id: string; quantity: number; price: number; size: string | null; color: string | null;
   arrivedAt: string; deliveryRequestedAt: string | null;
-  product: { id: string; name: string; images: string[]; brand: string | null; productNumber?: string | null; colorCodes?: { color: string; sequence: number }[] };
+  product: { id: string; name: string; images: string[]; brand: string | null; productNumber?: string | null; colorCodes?: { color: string; code: string }[] };
   order: { id: string; status: string };
   _source: 'order';
 };
@@ -57,7 +57,7 @@ type SupplierItem = SaleSnapshot & {
   id: string; quantity: number; size: string | null; color: string | null;
   arrivedAt: string; deliveryRequestedAt: string | null;
   name: string; brand: string; note: string | null;
-  product: { id: string; name: string; images: string[]; brand: string | null; productNumber?: string | null; colorCodes?: { color: string; sequence: number }[] } | null;
+  product: { id: string; name: string; images: string[]; brand: string | null; productNumber?: string | null; colorCodes?: { color: string; code: string }[] } | null;
   _source: 'supplier';
 };
 type UnifiedItem = InboundOrderItem | SupplierItem;

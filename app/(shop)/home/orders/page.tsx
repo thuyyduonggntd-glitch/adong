@@ -293,7 +293,7 @@ function groupInboundByDate(items: UnifiedItem[]): Array<{ date: string; label: 
 function OrderSnapshotCard({ target, snapRef }: { target: InquiryTarget; snapRef: React.RefObject<HTMLDivElement> }) {
   const { t } = useTranslation();
   return (
-    <div ref={snapRef} style={{ position: 'absolute', top: 0, left: -9999, pointerEvents: 'none', width: 360 }} className="bg-white p-5 font-sans">
+    <div ref={snapRef} style={{ position: 'fixed', top: 0, left: 0, transform: 'translateX(-100%)', pointerEvents: 'none', width: 360 }} className="bg-white p-5 font-sans">
       {target.brand && (
         <span className="text-xs font-semibold text-primary-600 bg-primary-50 px-2 py-0.5 rounded whitespace-nowrap">{target.brand}</span>
       )}
@@ -381,7 +381,7 @@ function ProductInquiryModal({ target, onClose }: {
             </div>
             <div>
               <label className="block text-xs text-slate-500 mb-1">{t('qna.contentLabel')}</label>
-              <textarea autoFocus className="input text-sm w-full min-h-28 resize-none"
+              <textarea className="input text-sm w-full min-h-28 resize-none"
                 placeholder={t('orders.inquiry.contentPlaceholder')}
                 value={content} onChange={(e) => setContent(e.target.value)} />
             </div>

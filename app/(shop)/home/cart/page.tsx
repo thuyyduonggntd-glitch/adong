@@ -346,7 +346,7 @@ export default function CartPage() {
       </div>
 
       {/* 모바일 sticky 주문 버튼 — 하단 탭바(h-16) 바로 위에 고정 */}
-      <div className="md:hidden fixed bottom-16 left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 z-30 shadow-lg">
+      <div className="md:hidden fixed bottom-16 left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 z-30 overflow-hidden">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm text-slate-500">
             {selectedItems.length > 0 ? `${selectedItems.length}개 선택` : t('cart.noSelectedItems')}

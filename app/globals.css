@@ -6,9 +6,13 @@
 
 @layer base {
   * { box-sizing: border-box; }
+  html {
+    overflow-x: hidden;
+  }
   body {
     @apply font-sans text-slate-800 bg-white;
     overflow-x: hidden;
+    position: relative;
   }
 }
 

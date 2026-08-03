@@ -397,7 +397,7 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
               </svg>
               <div>
                 <p className="text-xs font-bold text-amber-700 mb-0.5">{t('product.brandNotice')}</p>
-                <p className="text-sm text-amber-800 whitespace-pre-wrap">{brandInfo.notice}</p>
+                <p className="text-sm text-amber-800 whitespace-pre-wrap break-words">{brandInfo.notice}</p>
               </div>
             </div>
           )}
@@ -410,7 +410,7 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
               </div>
               <div className="px-4 py-3 space-y-3">
                 {brandInfo.sizeInfo && (
-                  <p className="text-sm text-slate-700 whitespace-pre-wrap">{brandInfo.sizeInfo}</p>
+                  <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">{brandInfo.sizeInfo}</p>
                 )}
                 {brandInfo.sizeImages.length > 0 && (
                   <div className="flex flex-wrap gap-2">
@@ -433,7 +433,7 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
               </div>
               <div className="px-4 py-3 space-y-3">
                 {brandInfo.modelInfo && (
-                  <p className="text-sm text-slate-700 whitespace-pre-wrap">{brandInfo.modelInfo}</p>
+                  <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">{brandInfo.modelInfo}</p>
                 )}
                 {brandInfo.modelImages.length > 0 && (
                   <div className="flex flex-wrap gap-2">
@@ -469,7 +469,7 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
 
       {/* 모바일 sticky 구매 버튼 — 하단 탭바(h-16) 바로 위에 고정 */}
       {session && (
-        <div className="md:hidden fixed bottom-16 left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 z-30 shadow-lg">
+        <div className="md:hidden fixed bottom-16 left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 z-30 overflow-hidden">
           <div className="flex items-center gap-2 mb-2 min-w-0">
             <span className="text-xs text-slate-500 truncate">
               {selectedSize && selectedColor

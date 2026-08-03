@@ -54,7 +54,7 @@ const PRODUCTS_LIST_SELECT = {
     },
   },
   prices: { select: { grade: true, price: true } },
-  colorImages: { where: { sequence: 0 }, take: 1, select: { imageUrl: true } },
+  colorImages: { orderBy: { sequence: 'asc' as const }, take: 1, select: { imageUrl: true } },
 } as const;
 
 interface Props {

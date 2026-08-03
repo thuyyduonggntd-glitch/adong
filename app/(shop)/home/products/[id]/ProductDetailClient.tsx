@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { formatPrice, getSaleLabel, calcFinalPrice } from '@/lib/utils';
@@ -40,7 +40,7 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
   const addItem = useCartStore((s) => s.addItem);
 
   const [selectedSize, setSelectedSize]     = useState('');
-  const [selectedColor, setSelectedColor]   = useState('');
+  const [selectedColor, setSelectedColor]   = useState<string>(product.colors?.[0] ?? '');
   const [quantity, setQuantity]             = useState(1);
   const [wishlisted, setWishlisted]         = useState(false);
   const [brandFaved, setBrandFaved]         = useState(false);
@@ -49,6 +49,65 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
   const [mainImg, setMainImg]               = useState(() =>
     resolveColorImage(product.colors?.[0], product.colorImages, product.images, PLACEHOLDER_IMG)
   );
+
+  // 선택 색상의 상세 이미지 목록 (sequence > 0)
+  const detailImgs = useMemo<string[]>(() => {
+    const fromColor = (product.colorImages ?? [])
+      .filter((ci: any) => ci.sequence > 0 && (!selectedColor || ci.color === selectedColor))
+      .map((ci: any) => ci.imageUrl as string);
+    return fromColor.length > 0 ? fromColor : (product.images ?? []);
+  }, [product.colorImages, product.images, selectedColor]);
+
+  // 비율 클러스터 필터: 모든 상세 이미지를 서로 비교해 다수 비율과 맞지 않는 이미지 제거
+  // null = 로딩 중 (이미지 숨김), Set = 표시할 인덱스 확정
+  const [visibleDetailIdxs, setVisibleDetailIdxs] = useState<Set<number> | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (detailImgs.length === 0) { setVisibleDetailIdxs(new Set()); return; }
+    if (detailImgs.length === 1) { setVisibleDetailIdxs(new Set([0])); return; }
+
+    setVisibleDetailIdxs(null);
+    const ratios: (number | null)[] = Array.from({ length: detailImgs.length }, () => null);
+    let loadedCount = 0;
+
+    const onAllLoaded = () => {
+      const validPairs = ratios
+        .map((r, i) => ({ r, i }))
+        .filter((x): x is { r: number; i: number } => x.r !== null);
+
+      if (validPairs.length === 0) {
+        setVisibleDetailIdxs(new Set(detailImgs.map((_, i) => i)));
+        return;
+      }
+
+      const TOLERANCE = 0.10;
+      let bestCluster: { r: number; i: number }[] = [];
+      for (const { r: candidate } of validPairs) {
+        const cluster = validPairs.filter(({ r }) => Math.abs(r - candidate) / candidate < TOLERANCE);
+        if (cluster.length > bestCluster.length) bestCluster = cluster;
+      }
+
+      const refRatio = bestCluster.reduce((s, { r }) => s + r, 0) / bestCluster.length;
+      const visible = new Set<number>();
+      validPairs.forEach(({ r, i }) => {
+        if (Math.abs(r - refRatio) / refRatio < TOLERANCE) visible.add(i);
+      });
+      setVisibleDetailIdxs(visible);
+    };
+
+    detailImgs.forEach((url, i) => {
+      const img = new window.Image();
+      img.onload = () => {
+        ratios[i] = img.naturalWidth / img.naturalHeight;
+        if (++loadedCount === detailImgs.length) onAllLoaded();
+      };
+      img.onerror = () => {
+        if (++loadedCount === detailImgs.length) onAllLoaded();
+      };
+      img.src = url;
+    });
+  }, [detailImgs]);
 
   const basePrice       = product.myGradePrice ?? product.price;
   const displayPrice    = product.myFinalPrice ?? calcFinalPrice(basePrice, product.isOnSale, product.saleType, product.saleValue);
@@ -135,25 +194,29 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
               </span>
             )}
           </div>
-          {((product.colorImages?.length ?? 0) > 0 || (product.sizeImages?.length ?? 0) > 0) && (
-            <div className="flex items-center gap-2 overflow-x-auto pb-1">
-              {(product.colorImages ?? []).map((ci: { color: string; imageUrl: string }) => (
-                <button key={`color-${ci.color}`} onClick={() => { setSelectedColor(ci.color); setMainImg(ci.imageUrl); }}
-                  title={ci.color}
-                  className={`relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border-2 transition-colors ${mainImg === ci.imageUrl ? 'border-primary-500' : 'border-slate-100 hover:border-primary-400'}`}>
-                  <Image src={ci.imageUrl} alt={ci.color} fill className="object-cover" {...noDownloadProps(!session)} />
-                </button>
-              ))}
-              {(product.colorImages?.length ?? 0) > 0 && (product.sizeImages?.length ?? 0) > 0 && (
-                <div className="w-px self-stretch bg-slate-200 flex-shrink-0" />
-              )}
-              {(product.sizeImages ?? []).map((img: string, i: number) => (
-                <div key={`size-${i}`} className="relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border-2 border-slate-100">
-                  <Image src={img} alt="" fill className="object-cover" {...noDownloadProps(!session)} />
-                </div>
-              ))}
-            </div>
-          )}
+          {(() => {
+            const coverImages = (product.colorImages ?? []).filter((ci: any) => ci.sequence === 0);
+            const hasThumbs = coverImages.length > 0 || (product.sizeImages?.length ?? 0) > 0;
+            return hasThumbs ? (
+              <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                {coverImages.map((ci: any) => (
+                  <button key={`color-${ci.color}`} onClick={() => { setSelectedColor(ci.color); setMainImg(ci.imageUrl); }}
+                    title={ci.color}
+                    className={`relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border-2 transition-colors ${selectedColor === ci.color ? 'border-primary-500' : 'border-slate-100 hover:border-primary-400'}`}>
+                    <Image src={ci.imageUrl} alt={ci.color} fill className="object-cover" {...noDownloadProps(!session)} />
+                  </button>
+                ))}
+                {coverImages.length > 0 && (product.sizeImages?.length ?? 0) > 0 && (
+                  <div className="w-px self-stretch bg-slate-200 flex-shrink-0" />
+                )}
+                {(product.sizeImages ?? []).map((img: string, i: number) => (
+                  <div key={`size-${i}`} className="relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border-2 border-slate-100">
+                    <Image src={img} alt="" fill className="object-cover" {...noDownloadProps(!session)} />
+                  </div>
+                ))}
+              </div>
+            ) : null;
+          })()}
         </div>
 
         {/* 정보 */}
@@ -387,17 +450,19 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
         </div>
       )}
 
-      {/* ── 상품 이미지 (상세페이지 스타일 — 전체폭, 틈 없이 세로 연결) ── */}
-      {/* 원본 이미지 크기가 상품마다 제각각이라 공통 1:1 박스에 crop해 폭을 통일한다 */}
-      {product.images && product.images.length > 0 && (
+      {/* ── 상세 이미지: 선택 색상의 sequence>0, 다수 비율 클러스터만 표시 ── */}
+      {detailImgs.length > 0 && visibleDetailIdxs !== null && visibleDetailIdxs.size > 0 && (
         <div className="mt-12 border-t border-slate-100 pt-10">
           <h2 className="text-lg font-bold text-slate-800 mb-5">{t('product.productImagesTitle')}</h2>
           <div className="max-w-2xl mx-auto">
-            {product.images.map((img: string, i: number) => (
-              <div key={i} className="relative aspect-square w-full">
-                <Image src={img} alt={`product ${i + 1}`} fill className="object-cover" sizes="(max-width: 768px) 100vw, 672px" {...noDownloadProps(!session)} />
-              </div>
-            ))}
+            {detailImgs.map((img, i) =>
+              visibleDetailIdxs.has(i) ? (
+                <div key={i} className="w-full">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={img} alt={`product ${i + 1}`} className="w-full h-auto block" {...noDownloadProps(!session)} />
+                </div>
+              ) : null
+            )}
           </div>
         </div>
       )}

@@ -17,6 +17,49 @@ type Product = {
   prices: GradePrice[];
 };
 
+type FilterOpt = { label: string; value: string };
+
+function ColFilter({
+  label, filterKey, options, value, openFilter, onOpen, onSelect,
+}: {
+  label: string; filterKey: string; options: FilterOpt[];
+  value: string; openFilter: string | null;
+  onOpen: (k: string | null) => void; onSelect: (v: string) => void;
+}) {
+  const active = value !== '';
+  return (
+    <div className="relative inline-block">
+      <button
+        onClick={(e) => { e.stopPropagation(); onOpen(openFilter === filterKey ? null : filterKey); }}
+        className={`flex items-center gap-0.5 text-xs font-semibold uppercase tracking-wide transition-colors ${active ? 'text-primary-600' : 'text-slate-400 hover:text-slate-600'}`}
+      >
+        {label}
+        <svg className="w-3 h-3 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+        </svg>
+      </button>
+      {openFilter === filterKey && (
+        <div
+          className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 min-w-[120px] py-1"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {options.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => { onSelect(opt.value); onOpen(null); }}
+              className={`block w-full text-left px-3 py-1.5 text-xs whitespace-nowrap transition-colors ${
+                value === opt.value ? 'text-primary-600 font-semibold bg-primary-50' : 'text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminProductsPage() {
   const [products, setProducts]     = useState<Product[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -25,6 +68,15 @@ export default function AdminProductsPage() {
   const [page, setPage] = useState(1);
   const [selected, setSelected]     = useState<Set<string>>(new Set());
   const [editRemark, setEditRemark] = useState<{ id: string; value: string } | null>(null);
+
+  // 컬럼 헤더 필터 드롭다운
+  const [openFilter, setOpenFilter]         = useState<string | null>(null);
+  const [filterActive, setFilterActive]     = useState(''); // '' | 'active' | 'inactive'
+  const [filterSale, setFilterSale]         = useState(''); // '' | 'sale' | 'nosale'
+  const [filterCarryOver, setFilterCarryOver] = useState(''); // '' | 'yes' | 'no'
+  const [filterSeason, setFilterSeason]     = useState('');
+  const [filterGender, setFilterGender]     = useState('');
+  const [filterRemark, setFilterRemark]     = useState(''); // '' | 'has' | 'none'
 
   // 일괄 SALE 모달
   const [bulkModal, setBulkModal]   = useState(false);
@@ -45,6 +97,14 @@ export default function AdminProductsPage() {
   };
 
   useEffect(() => { loadTranslateStatus(); }, []);
+
+  // 바깥 클릭 시 필터 드롭다운 닫기
+  useEffect(() => {
+    if (!openFilter) return;
+    const handler = () => setOpenFilter(null);
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, [openFilter]);
 
   const runBatchTranslate = async () => {
     setTranslating(true);
@@ -91,19 +151,27 @@ export default function AdminProductsPage() {
     setEditRemark(null);
   };
 
-  const brands = useMemo(() => Array.from(new Set(products.map((p) => p.brand).filter(Boolean))) as string[], [products]);
+  const brands  = useMemo(() => Array.from(new Set(products.map((p) => p.brand).filter(Boolean))).sort() as string[], [products]);
+  const seasons = useMemo(() => Array.from(new Set(products.map((p) => p.season).filter(Boolean))).sort() as string[], [products]);
+  const genders = useMemo(() => Array.from(new Set(products.map((p) => p.gender).filter(Boolean))).sort() as string[], [products]);
 
   const filtered = useMemo(() => products.filter((p) => {
     const q = search.toLowerCase();
-    const matchQ = !search || p.name.toLowerCase().includes(q) || (p.brand?.toLowerCase().includes(q) ?? false) || (p.productNumber?.toLowerCase().includes(q) ?? false);
-    const matchB = !brandFilter || p.brand === brandFilter;
-    return matchQ && matchB;
-  }), [products, search, brandFilter]);
+    const matchQ         = !search        || p.name.toLowerCase().includes(q) || (p.brand?.toLowerCase().includes(q) ?? false) || (p.productNumber?.toLowerCase().includes(q) ?? false);
+    const matchB         = !brandFilter   || p.brand === brandFilter;
+    const matchActive    = !filterActive  || (filterActive    === 'active'   ? p.isActive   : !p.isActive);
+    const matchSale      = !filterSale    || (filterSale      === 'sale'     ? p.isOnSale   : !p.isOnSale);
+    const matchCarryOver = !filterCarryOver || (filterCarryOver === 'yes'   ? p.isCarryOver : !p.isCarryOver);
+    const matchSeason    = !filterSeason  || p.season  === filterSeason;
+    const matchGender    = !filterGender  || p.gender  === filterGender;
+    const matchRemark    = !filterRemark  || (filterRemark === 'has' ? !!p.remark : !p.remark);
+    return matchQ && matchB && matchActive && matchSale && matchCarryOver && matchSeason && matchGender && matchRemark;
+  }), [products, search, brandFilter, filterActive, filterSale, filterCarryOver, filterSeason, filterGender, filterRemark]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = useMemo(() => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [filtered, page]);
 
-  useEffect(() => { setPage(1); }, [search, brandFilter]);
+  useEffect(() => { setPage(1); }, [search, brandFilter, filterActive, filterSale, filterCarryOver, filterSeason, filterGender, filterRemark]);
   useEffect(() => { setPage((p) => Math.min(p, totalPages)); }, [totalPages]);
 
   // 안전을 위해 "전체 선택"은 현재 페이지에 보이는 항목만 대상으로 한다.
@@ -176,6 +244,8 @@ export default function AdminProductsPage() {
     setSelected(new Set());
   };
 
+  const filterProps = { openFilter, onOpen: setOpenFilter };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
@@ -199,10 +269,6 @@ export default function AdminProductsPage() {
       <div className="flex flex-wrap gap-2 mb-4">
         <input className="input max-w-xs text-sm" placeholder="상품명, 브랜드, 제품번호 검색..."
           value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select className="input text-sm w-auto" value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)}>
-          <option value="">전체 브랜드</option>
-          {brands.map((b) => <option key={b} value={b}>{b}</option>)}
-        </select>
       </div>
 
       {/* 일괄 SALE 액션 바 */}
@@ -236,15 +302,45 @@ export default function AdminProductsPage() {
                       <input type="checkbox" checked={allSelected} onChange={toggleAll} className="w-4 h-4 accent-primary-600 cursor-pointer" />
                     </th>
                     <th className="px-3 py-3">관리</th>
-                    <th className="px-3 py-3 text-center">상태</th>
+                    <th className="px-3 py-3">
+                      <ColFilter {...filterProps} label="상태" filterKey="active"
+                        options={[{ label: '전체', value: '' }, { label: '판매중', value: 'active' }, { label: '숨김', value: 'inactive' }]}
+                        value={filterActive} onSelect={setFilterActive} />
+                    </th>
                     <th className="px-3 py-3">사진</th>
-                    <th className="px-3 py-3">브랜드</th>
-                    <th className="px-3 py-3">상품명</th>
+                    <th className="px-3 py-3">
+                      <ColFilter {...filterProps} label="브랜드" filterKey="brand"
+                        options={[{ label: '전체', value: '' }, ...brands.map((b) => ({ label: b, value: b }))]}
+                        value={brandFilter} onSelect={setBrandFilter} />
+                    </th>
+                    <th className="px-3 py-3">
+                      <div className="flex items-center gap-2">
+                        <span>상품명</span>
+                        <ColFilter {...filterProps} label="SALE" filterKey="sale"
+                          options={[{ label: '전체', value: '' }, { label: 'SALE중', value: 'sale' }, { label: 'SALE없음', value: 'nosale' }]}
+                          value={filterSale} onSelect={setFilterSale} />
+                        <ColFilter {...filterProps} label="이월" filterKey="carryover"
+                          options={[{ label: '전체', value: '' }, { label: '이월상품', value: 'yes' }, { label: '일반', value: 'no' }]}
+                          value={filterCarryOver} onSelect={setFilterCarryOver} />
+                      </div>
+                    </th>
                     <th className="px-3 py-3">제품번호</th>
-                    <th className="px-3 py-3">시즌</th>
-                    <th className="px-3 py-3">성별</th>
+                    <th className="px-3 py-3">
+                      <ColFilter {...filterProps} label="시즌" filterKey="season"
+                        options={[{ label: '전체', value: '' }, ...seasons.map((s) => ({ label: s, value: s }))]}
+                        value={filterSeason} onSelect={setFilterSeason} />
+                    </th>
+                    <th className="px-3 py-3">
+                      <ColFilter {...filterProps} label="성별" filterKey="gender"
+                        options={[{ label: '전체', value: '' }, ...genders.map((g) => ({ label: g, value: g }))]}
+                        value={filterGender} onSelect={setFilterGender} />
+                    </th>
                     <th className="px-3 py-3">등급별 가격</th>
-                    <th className="px-3 py-3">비고</th>
+                    <th className="px-3 py-3">
+                      <ColFilter {...filterProps} label="비고" filterKey="remark"
+                        options={[{ label: '전체', value: '' }, { label: '있음', value: 'has' }, { label: '없음', value: 'none' }]}
+                        value={filterRemark} onSelect={setFilterRemark} />
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">

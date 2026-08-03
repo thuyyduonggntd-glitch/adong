@@ -51,6 +51,7 @@ const HOME_PRODUCT_SELECT = {
     },
   },
   prices: { select: { grade: true, price: true } },
+  colorImages: { where: { sequence: 0 }, take: 1, select: { imageUrl: true } },
 } as const;
 
 /* 브랜드 섹션은 세션과 무관 — 캐싱된 쿼리라 거의 즉시 렌더링되고, 나머지와 별도로 스트리밍된다. */

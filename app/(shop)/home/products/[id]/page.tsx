@@ -11,7 +11,7 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
 
   const product = await prisma.product.findUnique({
     where: { id: params.id },
-    include: { category: true, prices: true, variants: true, colorImages: { select: { color: true, imageUrl: true }, orderBy: { sequence: 'asc' } } },
+    include: { category: true, prices: true, variants: true, colorImages: { select: { color: true, imageUrl: true, sequence: true }, orderBy: { sequence: 'asc' } } },
   });
 
   if (!product) notFound();

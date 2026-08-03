@@ -350,4 +350,8 @@
   "faq.category.shipping": "Envío",
   "faq.category.exchange": "Cambios/Devoluciones",
   "faq.category.payment": "Pago"
+,
+  "nav.home": "Inicio",
+  "nav.products": "Productos",
+  "nav.cart": "Carrito"
 }

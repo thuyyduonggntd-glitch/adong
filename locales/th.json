@@ -350,4 +350,8 @@
   "faq.category.shipping": "การจัดส่ง",
   "faq.category.exchange": "เปลี่ยน/คืนสินค้า",
   "faq.category.payment": "การชำระเงิน"
+,
+  "nav.home": "หน้าแรก",
+  "nav.products": "สินค้า",
+  "nav.cart": "ตะกร้า"
 }

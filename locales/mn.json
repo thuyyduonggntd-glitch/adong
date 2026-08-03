@@ -350,4 +350,8 @@
   "faq.category.shipping": "Хүргэлт",
   "faq.category.exchange": "Солилцоо/Буцаалт",
   "faq.category.payment": "Төлбөр"
+,
+  "nav.home": "Нүүр",
+  "nav.products": "Бараа",
+  "nav.cart": "Сагс"
 }

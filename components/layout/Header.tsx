@@ -229,6 +229,18 @@ export default function Header() {
             <Link href="/home/orders"   className="block px-4 py-2 text-sm text-black hover:bg-primary-50 rounded-lg" onClick={() => setMenuOpen(false)}>{t('nav.orders')}</Link>
             <Link href="/home/wishlist" className="block px-4 py-2 text-sm text-black hover:text-red-500 hover:bg-red-50 rounded-lg" onClick={() => setMenuOpen(false)}>{t('nav.wishlist')}</Link>
             <Link href="/home/mypage" className="block px-4 py-2 text-sm text-black hover:bg-primary-50 rounded-lg" onClick={() => setMenuOpen(false)}>{t('nav.mypage')}</Link>
+            <div className="my-1 border-t border-slate-100" />
+            <div className="px-4 py-2">
+              <LanguageSwitcher />
+            </div>
+            {session && (
+              <button
+                onClick={() => { signOut({ callbackUrl: '/login' }); setMenuOpen(false); }}
+                className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 rounded-lg"
+              >
+                {t('nav.logout')}
+              </button>
+            )}
           </div>
         )}
       </div>

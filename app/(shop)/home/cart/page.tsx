@@ -170,7 +170,7 @@ export default function CartPage() {
   );
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10 pb-36 md:pb-10">
       <div className="flex items-center gap-3 mb-6">
         <h1 className="text-2xl font-bold text-slate-800">{t('cart.title')}</h1>
         {pricesLoading && (
@@ -343,6 +343,23 @@ export default function CartPage() {
           </button>
           <p className="text-xs text-slate-400 text-center mt-2">{t('cart.orderFooterNote')}</p>
         </div>
+      </div>
+
+      {/* 모바일 sticky 주문 버튼 — 하단 탭바(h-16) 바로 위에 고정 */}
+      <div className="md:hidden fixed bottom-16 left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 z-30 shadow-lg">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm text-slate-500">
+            {selectedItems.length > 0 ? `${selectedItems.length}개 선택` : t('cart.noSelectedItems')}
+          </span>
+          <span className="font-bold text-primary-700 text-lg">{formatPrice(selectedTotal)}</span>
+        </div>
+        <button
+          onClick={handleOrder}
+          disabled={loading || selectedItems.length === 0 || pricesLoading}
+          className="w-full btn-primary text-center disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {loading ? t('cart.processing') : pricesLoading ? t('cart.priceChecking') : t('cart.orderButton', { count: selectedItems.length })}
+        </button>
       </div>
     </div>
   );

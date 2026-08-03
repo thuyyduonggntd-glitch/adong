@@ -350,4 +350,8 @@
   "faq.category.shipping": "Доставка",
   "faq.category.exchange": "Обмен/Возврат",
   "faq.category.payment": "Оплата"
+,
+  "nav.home": "Главная",
+  "nav.products": "Товары",
+  "nav.cart": "Корзина"
 }

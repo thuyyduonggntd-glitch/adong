@@ -8,6 +8,7 @@
   * { box-sizing: border-box; }
   body {
     @apply font-sans text-slate-800 bg-white;
+    overflow-x: hidden;
   }
 }
 

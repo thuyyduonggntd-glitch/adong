@@ -350,4 +350,8 @@
   "faq.category.shipping": "배송방법",
   "faq.category.exchange": "교환반품",
   "faq.category.payment": "결제"
+,
+  "nav.home": "홈",
+  "nav.products": "상품",
+  "nav.cart": "장바구니"
 }

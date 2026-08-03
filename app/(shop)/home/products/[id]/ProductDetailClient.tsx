@@ -168,7 +168,7 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 pb-36 md:pb-10">
       <div className="grid md:grid-cols-2 gap-10">
         {/* 이미지 */}
         <div className="space-y-3">
@@ -416,7 +416,7 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
                   <div className="flex flex-wrap gap-2">
                     {brandInfo.sizeImages.map((u, i) => (
                       <div key={i} className="relative rounded-lg overflow-hidden border border-slate-100">
-                        <Image src={u} alt={`size ${i + 1}`} width={200} height={200} className="object-contain max-h-48 w-auto" />
+                        <Image src={u} alt={`size ${i + 1}`} width={200} height={200} className="object-contain max-h-48 max-w-full" />
                       </div>
                     ))}
                   </div>
@@ -439,7 +439,7 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
                   <div className="flex flex-wrap gap-2">
                     {brandInfo.modelImages.map((u, i) => (
                       <div key={i} className="relative rounded-lg overflow-hidden border border-slate-100">
-                        <Image src={u} alt={`model ${i + 1}`} width={200} height={200} className="object-contain max-h-48 w-auto" />
+                        <Image src={u} alt={`model ${i + 1}`} width={200} height={200} className="object-contain max-h-48 max-w-full" />
                       </div>
                     ))}
                   </div>
@@ -463,6 +463,38 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
                 </div>
               ) : null
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 모바일 sticky 구매 버튼 — 하단 탭바(h-16) 바로 위에 고정 */}
+      {session && (
+        <div className="md:hidden fixed bottom-16 left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 z-30 shadow-lg">
+          <div className="flex items-center gap-2 mb-2 min-w-0">
+            <span className="text-xs text-slate-500 truncate">
+              {selectedSize && selectedColor
+                ? `${selectedSize} / ${selectedColor}`
+                : !selectedSize && !selectedColor
+                  ? t('product.selectSizeColorAlert')
+                  : !selectedSize ? t('product.sizeSelect') : selectedColor}
+            </span>
+            <span className="ml-auto font-bold text-primary-700 whitespace-nowrap">{formatPrice(finalPrice * quantity)}</span>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleAddCart}
+              disabled={isOutOfStock}
+              className={`flex-1 btn-outline text-sm py-2.5 ${isOutOfStock ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {isOutOfStock ? t('product.outOfStock') : added ? t('product.added') : t('product.addToCart')}
+            </button>
+            <button
+              onClick={handleOrder}
+              disabled={isOutOfStock}
+              className={`flex-1 btn-primary text-sm py-2.5 ${isOutOfStock ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {isOutOfStock ? t('product.outOfStock') : t('product.order')}
+            </button>
           </div>
         </div>
       )}

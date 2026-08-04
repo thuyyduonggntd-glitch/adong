@@ -7,10 +7,15 @@ let storage: Storage | null = null;
 
 function getStorage(): Storage {
   if (storage) return storage;
-  
-  // Dùng Application Default Credentials (gcloud auth application-default login)
-  // Không cần JSON key file
-  storage = new Storage({ projectId: PROJECT_ID });
+
+  const b64 = process.env.GCS_CREDENTIALS_BASE64;
+  if (b64) {
+    const credentials = JSON.parse(Buffer.from(b64, 'base64').toString('utf-8'));
+    storage = new Storage({ credentials, projectId: PROJECT_ID });
+  } else {
+    // Local dev: Application Default Credentials (gcloud auth application-default login)
+    storage = new Storage({ projectId: PROJECT_ID });
+  }
   return storage;
 }
 

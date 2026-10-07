@@ -192,7 +192,7 @@ export default function WishlistPage() {
               <div key={brand.id} className="card p-4 flex items-center gap-3 border-red-100">
                 {brand.image ? (
                   <div className="relative w-10 h-10 rounded-full overflow-hidden bg-slate-50 flex-shrink-0 border border-slate-100">
-                    <Image src={brand.image} alt={brand.name} fill className="object-cover" />
+                    <Image src={brand.image} alt={brand.name} fill loading="lazy" sizes="48px" className="object-cover" />
                   </div>
                 ) : (
                   <div className="w-10 h-10 rounded-full bg-primary-50 flex-shrink-0 flex items-center justify-center text-primary-600 font-bold text-sm border border-primary-100">

@@ -99,7 +99,7 @@ export default function BrandFilterAZ({ brands, activeBrand }: Props) {
                     : 'border-slate-200 text-slate-600 hover:border-primary-400 bg-white'
                   }`}>
                 <span className="relative w-4 h-4 rounded-full overflow-hidden flex-shrink-0 bg-slate-100">
-                  <Image src={b.image ?? '/brand-default.svg'} alt={b.name} fill className="object-cover" />
+                  <Image src={b.image ?? '/brand-default.svg'} alt={b.name} fill loading="lazy" sizes="24px" className="object-cover" />
                 </span>
                 {b.name}
               </Link>

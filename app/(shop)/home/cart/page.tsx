@@ -227,6 +227,8 @@ export default function CartPage() {
                         src={imgSrc}
                         alt={item.product.name}
                         fill
+                        loading="lazy"
+                        sizes="96px"
                         className="object-cover"
                       />
                     );

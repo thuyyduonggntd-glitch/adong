@@ -23,7 +23,7 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ['Noto Sans KR', 'sans-serif'],
+        sans: ['var(--font-noto-sans-kr)', 'Noto Sans KR', 'sans-serif'],
       },
     },
   },

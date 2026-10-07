@@ -173,7 +173,16 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
         {/* 이미지 */}
         <div className="space-y-3">
           <div className="relative aspect-square bg-primary-50 rounded-2xl overflow-hidden">
-            <Image src={mainImg} alt={localizedName} fill className="object-cover" {...noDownloadProps(!session)} />
+            <Image
+              src={mainImg}
+              alt={localizedName}
+              fill
+              priority
+              sizes="(max-width: 768px) 100vw, 50vw"
+              quality={80}
+              className="object-cover"
+              {...noDownloadProps(!session)}
+            />
             {session && (product.isOnSale || product.isCarryOver) && (
               <div className="absolute top-3 left-3 flex gap-1.5">
                 {product.isOnSale && (
@@ -203,7 +212,7 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
                   <button key={`color-${ci.color}`} onClick={() => { setSelectedColor(ci.color); setMainImg(ci.imageUrl); }}
                     title={ci.color}
                     className={`relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border-2 transition-colors ${selectedColor === ci.color ? 'border-primary-500' : 'border-slate-100 hover:border-primary-400'}`}>
-                    <Image src={ci.imageUrl} alt={ci.color} fill className="object-cover" {...noDownloadProps(!session)} />
+                    <Image src={ci.imageUrl} alt={ci.color} fill loading="lazy" sizes="96px" quality={80} className="object-cover" {...noDownloadProps(!session)} />
                   </button>
                 ))}
                 {coverImages.length > 0 && (product.sizeImages?.length ?? 0) > 0 && (
@@ -211,7 +220,7 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
                 )}
                 {(product.sizeImages ?? []).map((img: string, i: number) => (
                   <div key={`size-${i}`} className="relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border-2 border-slate-100">
-                    <Image src={img} alt="" fill className="object-cover" {...noDownloadProps(!session)} />
+                    <Image src={img} alt="" fill loading="lazy" sizes="96px" quality={80} className="object-cover" {...noDownloadProps(!session)} />
                   </div>
                 ))}
               </div>
@@ -459,7 +468,7 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
               visibleDetailIdxs.has(i) ? (
                 <div key={i} className="w-full">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={img} alt={`product ${i + 1}`} className="w-full h-auto block" {...noDownloadProps(!session)} />
+                  <img src={img} alt={`product ${i + 1}`} loading="lazy" className="w-full h-auto block" {...noDownloadProps(!session)} />
                 </div>
               ) : null
             )}

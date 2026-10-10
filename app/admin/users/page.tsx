@@ -1,8 +1,11 @@
 'use client';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { formatPrice, formatDate, DEALER_GRADE_LABELS, DEALER_GRADE_ORDER } from '@/lib/utils';
 import { COUNTRIES } from '@/lib/countries';
 import PhoneInput from '@/components/PhoneInput';
+import Pagination from '@/components/ui/Pagination';
+
+const PAGE_SIZE = 50;
 
 type UserRow = {
   id: string; name: string; email: string; phone: string | null; role: 'USER' | 'ADMIN' | 'SUB_ADMIN';
@@ -219,11 +222,16 @@ function UserCard({
 }
 
 export default function AdminUsersPage() {
-  const [users, setUsers]           = useState<UserRow[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [search, setSearch]         = useState('');
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [editForm, setEditForm]     = useState<EditForm>({
+  const [users, setUsers]               = useState<UserRow[]>([]);
+  const [total, setTotal]               = useState(0);
+  const [totalSales, setTotalSales]     = useState(0);
+  const [totalDeposit, setTotalDeposit] = useState(0);
+  const [loading, setLoading]           = useState(true);
+  const [page, setPage]                 = useState(1);
+  const [search, setSearch]             = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [expandedId, setExpandedId]     = useState<string | null>(null);
+  const [editForm, setEditForm]         = useState<EditForm>({
     name: '', email: '', phone: '', shopName: '', businessNumber: '', shopSiteUrl: '',
     address: '', shippingName: '', shippingPhone: '', password: '', dealerGrade: 'REGULAR', country: '', role: 'USER',
   });
@@ -232,10 +240,29 @@ export default function AdminUsersPage() {
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/users')
+    const t = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => { setPage(1); setExpandedId(null); }, [debouncedSearch]);
+
+  const fetchUsers = useCallback(() => {
+    const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) });
+    if (debouncedSearch) params.set('q', debouncedSearch);
+    setLoading(true);
+    fetch(`/api/users?${params}`)
       .then((r) => r.json())
-      .then((d) => { setUsers(Array.isArray(d) ? d : []); setLoading(false); });
-  }, []);
+      .then((d) => {
+        setUsers(Array.isArray(d.users) ? d.users : []);
+        setTotal(d.total ?? 0);
+        setTotalSales(d.totalSales ?? 0);
+        setTotalDeposit(d.totalDeposit ?? 0);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [page, debouncedSearch]);
+
+  useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
   const handleExpand = (user: UserRow) => {
     if (expandedId === user.id) { setExpandedId(null); return; }
@@ -292,16 +319,10 @@ export default function AdminUsersPage() {
     setTogglingId(null);
   };
 
-  const filtered = useMemo(() =>
-    users.filter((u) =>
-      u.name.toLowerCase().includes(search.toLowerCase()) ||
-      u.email.toLowerCase().includes(search.toLowerCase()) ||
-      (u.phone?.includes(search) ?? false) ||
-      (u.shopName?.toLowerCase().includes(search.toLowerCase()) ?? false)
-    ), [users, search]);
-
-  const admins  = filtered.filter((u) => u.role === 'ADMIN' || u.role === 'SUB_ADMIN');
-  const members = filtered.filter((u) => u.role === 'USER');
+  const admins  = users.filter((u) => u.role === 'ADMIN' || u.role === 'SUB_ADMIN');
+  const members = users.filter((u) => u.role === 'USER');
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const totalOutstanding = Math.max(0, totalSales - totalDeposit);
 
   const cardProps = { editForm, saving, savedId, togglingId, onFormChange: handleFormChange, onSave: handleSave, onClose: () => setExpandedId(null), onToggleActive: handleToggleActive };
 
@@ -313,51 +334,62 @@ export default function AdminUsersPage() {
           value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
-      {!loading && members.length > 0 && (
+      {!loading && (
         <div className="card p-4 mb-5 flex gap-6 flex-wrap text-sm">
-          <span className="text-slate-500">일반 회원 <strong className="text-slate-800">{members.length}명</strong></span>
-          <span className="text-slate-500">전체 매출 <strong className="text-slate-800">{formatPrice(members.reduce((s, u) => s + u.totalSales, 0))}</strong></span>
-          <span className="text-slate-500">전체 입금 <strong className="text-green-700">{formatPrice(members.reduce((s, u) => s + u.depositAmount, 0))}</strong></span>
-          <span className="text-slate-500">전체 미수금 <strong className="text-red-600">{formatPrice(members.reduce((s, u) => s + Math.max(0, u.totalSales - u.depositAmount), 0))}</strong></span>
+          <span className="text-slate-500">전체 회원 <strong className="text-slate-800">{total}명</strong></span>
+          <span className="text-slate-500">전체 매출 <strong className="text-slate-800">{formatPrice(totalSales)}</strong></span>
+          <span className="text-slate-500">전체 입금 <strong className="text-green-700">{formatPrice(totalDeposit)}</strong></span>
+          <span className="text-slate-500">전체 미수금 <strong className="text-red-600">{formatPrice(totalOutstanding)}</strong></span>
         </div>
       )}
 
       {loading ? (
         <div className="text-center py-16 text-slate-400">로딩 중...</div>
       ) : (
-        <div className="space-y-6">
-          {admins.length > 0 && (
-            <div>
-              <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
-                관리자 계정 ({admins.length})
-              </p>
-              <div className="space-y-2">
-                {admins.map((u) => (
-                  <UserCard key={u.id} user={u} isOpen={expandedId === u.id} onExpand={handleExpand} {...cardProps} />
-                ))}
-              </div>
-            </div>
-          )}
+        <>
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <p className="text-xs text-slate-400">{total}명</p>
+            <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+          </div>
 
-          {members.length > 0 && (
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-primary-400 inline-block" />
-                일반 회원 ({members.length})
-              </p>
-              <div className="space-y-2">
-                {members.map((u) => (
-                  <UserCard key={u.id} user={u} isOpen={expandedId === u.id} onExpand={handleExpand} {...cardProps} />
-                ))}
+          <div className="space-y-6">
+            {admins.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
+                  관리자 계정 ({admins.length})
+                </p>
+                <div className="space-y-2">
+                  {admins.map((u) => (
+                    <UserCard key={u.id} user={u} isOpen={expandedId === u.id} onExpand={handleExpand} {...cardProps} />
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {filtered.length === 0 && (
-            <div className="text-center py-16 text-slate-400">검색 결과가 없습니다.</div>
-          )}
-        </div>
+            {members.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-primary-400 inline-block" />
+                  일반 회원
+                </p>
+                <div className="space-y-2">
+                  {members.map((u) => (
+                    <UserCard key={u.id} user={u} isOpen={expandedId === u.id} onExpand={handleExpand} {...cardProps} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {users.length === 0 && (
+              <div className="text-center py-16 text-slate-400">검색 결과가 없습니다.</div>
+            )}
+          </div>
+
+          <div className="mt-4">
+            <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+          </div>
+        </>
       )}
     </div>
   );

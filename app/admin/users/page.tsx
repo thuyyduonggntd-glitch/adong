@@ -1,11 +1,19 @@
 'use client';
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, Fragment } from 'react';
 import { formatPrice, formatDate, DEALER_GRADE_LABELS, DEALER_GRADE_ORDER } from '@/lib/utils';
 import { COUNTRIES } from '@/lib/countries';
 import PhoneInput from '@/components/PhoneInput';
 import Pagination from '@/components/ui/Pagination';
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE          = 50;
+const ACTIVITY_PAGE_SIZE = 20;
+
+type DailyBreakdown = { date: string; orderCount: number; orderAmount: number; deposit: number; descriptions: string[] };
+type UserActivity = {
+  userId: string; userName: string;
+  totalOrders: number; totalRevenue: number; totalDeposit: number; balance: number;
+  dailyBreakdown: DailyBreakdown[];
+};
 
 type UserRow = {
   id: string; name: string; email: string; phone: string | null; role: 'USER' | 'ADMIN' | 'SUB_ADMIN';
@@ -319,6 +327,34 @@ export default function AdminUsersPage() {
     setTogglingId(null);
   };
 
+  // ── 아이디별 현황 (최근 60일) ──────────────────────────────────────────────
+  const [activityOpen, setActivityOpen]         = useState(false);
+  const [activityData, setActivityData]         = useState<UserActivity[]>([]);
+  const [activityLoading, setActivityLoading]   = useState(false);
+  const [activityPage, setActivityPage]         = useState(1);
+  const [activityExpanded, setActivityExpanded] = useState<string | null>(null);
+
+  const loadActivity = async () => {
+    if (activityData.length > 0) return; // cache hit
+    setActivityLoading(true);
+    try {
+      const d = await fetch('/api/users/activity').then((r) => r.json());
+      setActivityData(Array.isArray(d) ? d : []);
+    } finally { setActivityLoading(false); }
+  };
+
+  const toggleActivity = async () => {
+    if (!activityOpen) await loadActivity();
+    setActivityOpen((v) => !v);
+  };
+
+  const activityTotalPages = Math.max(1, Math.ceil(activityData.length / ACTIVITY_PAGE_SIZE));
+  const activityPaged      = activityData.slice((activityPage - 1) * ACTIVITY_PAGE_SIZE, activityPage * ACTIVITY_PAGE_SIZE);
+  const formatActivityDate = (d: string) => {
+    const dt = new Date(d + 'T00:00:00');
+    return dt.toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit', weekday: 'short' });
+  };
+
   const admins  = users.filter((u) => u.role === 'ADMIN' || u.role === 'SUB_ADMIN');
   const members = users.filter((u) => u.role === 'USER');
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -391,6 +427,108 @@ export default function AdminUsersPage() {
           </div>
         </>
       )}
+
+      {/* ── 아이디별 현황 (최근 60일) ─────────────────────────────────── */}
+      <div className="mt-10">
+        <button
+          onClick={toggleActivity}
+          className="flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-primary-600 transition-colors"
+        >
+          <span className="text-xs">{activityOpen ? '▼' : '▶'}</span>
+          아이디별 현황 (최근 60일)
+          {activityLoading && <span className="text-xs font-normal text-slate-400 ml-1">로딩 중...</span>}
+          {!activityLoading && activityData.length > 0 && (
+            <span className="text-xs font-normal text-slate-400 ml-1">{activityData.length}명</span>
+          )}
+        </button>
+
+        {activityOpen && (
+          <div className="mt-3">
+            {activityLoading ? (
+              <div className="text-center py-8 text-slate-400 text-sm">로딩 중...</div>
+            ) : activityData.length === 0 ? (
+              <div className="text-center py-8 text-slate-400 text-sm">최근 60일 내 활동 데이터가 없습니다.</div>
+            ) : (
+              <>
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500">
+                        <th className="py-3 px-4 text-left font-semibold">아이디</th>
+                        <th className="py-3 px-4 text-right font-semibold">주문건수</th>
+                        <th className="py-3 px-4 text-right font-semibold">매출</th>
+                        <th className="py-3 px-4 text-right font-semibold">입금</th>
+                        <th className="py-3 px-4 text-right font-semibold">잔금</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activityPaged.map((u) => (
+                        <Fragment key={u.userId}>
+                          <tr
+                            className="border-b border-slate-100 hover:bg-slate-50 cursor-pointer"
+                            onClick={() => setActivityExpanded(activityExpanded === u.userId ? null : u.userId)}
+                          >
+                            <td className="py-3 px-4 font-medium text-slate-800">
+                              <span className="flex items-center gap-1.5">
+                                <span className="text-slate-400 text-xs">{activityExpanded === u.userId ? '▼' : '▶'}</span>
+                                {u.userName}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right text-slate-600">{u.totalOrders}건</td>
+                            <td className="py-3 px-4 text-right font-semibold text-slate-800">{formatPrice(u.totalRevenue)}</td>
+                            <td className="py-3 px-4 text-right text-green-700">{formatPrice(u.totalDeposit)}</td>
+                            <td className={`py-3 px-4 text-right font-semibold ${u.balance < 0 ? 'text-red-600' : 'text-slate-600'}`}>
+                              {formatPrice(u.balance)}
+                            </td>
+                          </tr>
+                          {activityExpanded === u.userId && (
+                            <tr>
+                              <td colSpan={5} className="bg-slate-50 px-6 py-3">
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className="text-slate-400 border-b border-slate-200">
+                                      <th className="pb-1.5 text-left font-semibold">날짜</th>
+                                      <th className="pb-1.5 text-right font-semibold">주문</th>
+                                      <th className="pb-1.5 text-right font-semibold">주문금액</th>
+                                      <th className="pb-1.5 text-right font-semibold">입금</th>
+                                      <th className="pb-1.5 pl-4 text-left font-semibold">비고</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {u.dailyBreakdown.map((d) => (
+                                      <tr key={d.date} className="border-b border-slate-100 last:border-0">
+                                        <td className="py-1.5 text-slate-500">{formatActivityDate(d.date)}</td>
+                                        <td className="py-1.5 text-right text-slate-600">{d.orderCount > 0 ? `${d.orderCount}건` : '-'}</td>
+                                        <td className="py-1.5 text-right text-slate-700">{d.orderAmount > 0 ? formatPrice(d.orderAmount) : '-'}</td>
+                                        <td className="py-1.5 text-right text-green-700">{d.deposit > 0 ? formatPrice(d.deposit) : '-'}</td>
+                                        <td className="py-1.5 pl-4 text-slate-400">{d.descriptions.join(', ') || '-'}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {activityTotalPages > 1 && (
+                  <div className="mt-3">
+                    <Pagination
+                      page={activityPage}
+                      totalPages={activityTotalPages}
+                      onChange={(p) => { setActivityPage(p); setActivityExpanded(null); }}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

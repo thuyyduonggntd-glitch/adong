@@ -27,22 +27,22 @@ const MENU_GROUPS: MenuGroup[] = [
     ],
   },
   {
-    label: '하나 화물',
-    zone: 'goods',
-    items: [
-      { href: '/admin/products', label: '상품 관리', icon: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4' },
-      { href: '/admin/brands', label: '브랜드 관리', icon: 'M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z' },
-    ],
-  },
-  {
     label: '주문',
     zone: 'orders',
     items: [
-      { href: '/admin/orders', label: '주문 관리', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2', badge: undefined },
+      { href: '/admin/orders', label: '주문 관리', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
       { href: '/admin/cancelled', label: '취소 상품', icon: 'M6 18L18 6M6 6l12 12', badge: 'cancelCount' },
       { href: '/admin/shipping', label: '배송 관리', icon: 'M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0zM13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0' },
       { href: '/admin/qna', label: '문의', icon: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z', badge: 'qnaCount' },
       { href: '/admin/users', label: '회원 관리', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z', badge: 'newUserCount' },
+    ],
+  },
+  {
+    label: '상품',
+    zone: 'goods',
+    items: [
+      { href: '/admin/products', label: '상품 관리', icon: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4' },
+      { href: '/admin/brands', label: '브랜드 관리', icon: 'M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z' },
     ],
   },
   {
@@ -58,8 +58,8 @@ const MENU_GROUPS: MenuGroup[] = [
 
 const GROUP_ZONE_LABELS: Record<string, string> = {
   admin: '관리',
-  goods: '하나 화물',
   orders: '주문',
+  goods: '상품',
   settings: '설정',
 };
 
@@ -143,7 +143,7 @@ export default function AdminSidebar() {
           <div>
             <Link href={homeHref} className="text-xl font-bold text-primary-200">꿈비샵 관리자</Link>
             <p className="text-primary-400 text-xs mt-1">
-              {isAdmin ? 'Admin' : `담당: ${adminZones.map((z) => z === 'goods' ? '하나 화물' : '주문').join(' · ')}`}
+              {isAdmin ? 'Admin' : `담당: ${adminZones.map((z) => z === 'goods' ? '상품' : '주문').join(' · ')}`}
             </p>
           </div>
           <button onClick={() => setOpen(false)} aria-label="메뉴 닫기" className="md:hidden p-1 text-primary-300 hover:text-white">

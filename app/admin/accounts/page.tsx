@@ -13,8 +13,8 @@ type Account = {
 };
 
 const ZONE_LABELS: Record<string, string> = {
-  goods: '하나 화물 (상품·브랜드)',
-  orders: '주문 (주문·배송·문의·회원)',
+  orders: '주문 (주문 관리·배송·문의·회원)',
+  goods: '상품 (상품 관리·브랜드)',
 };
 
 export default function AccountsPage() {

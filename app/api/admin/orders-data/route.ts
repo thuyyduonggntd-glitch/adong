@@ -17,18 +17,6 @@ export async function GET() {
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
   const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
 
-  // 기존 GET /api/orders/items?outOfStockOrUnshipped=1 이 하던 90일 지난 레코드 정리 동일 유지
-  await prisma.orderItem.deleteMany({
-    where: {
-      OR: [
-        { outOfStockAt: { lt: cutoff90 } },
-        { unshippedAt: { lt: cutoff90 } },
-      ],
-      cancelledAt: null,
-      arrivedAt: null,
-    },
-  });
-
   const orderSelect = {
     id: true, userId: true, totalAmount: true, status: true, cancelLocked: true, createdAt: true, note: true,
     user: { select: { name: true } },

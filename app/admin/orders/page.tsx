@@ -71,8 +71,23 @@ type FlatRow = SaleSnapshot & {
   orderDate: string; status: string; itemCancelLocked: boolean; orderCancelLocked: boolean;
   confirmedAt: string | null; arrivedAt: string | null; cancelledAt: string | null;
   outOfStockAt: string | null; unshippedAt: string | null;
-  note: string | null;
+  note: string | null; orderBatchId: string | null;
 };
+
+// ── 발주 차수 타입 ────────────────────────────────────────────────────────────
+type OrderBatch = { id: string; createdAt: string; itemCount: number };
+
+// ── 서버에서 받는 confirmed-items 타입 ─────────────────────────────────────────
+type ConfirmedItem = {
+  itemId: string; orderId: string; userName: string;
+  brand: string; productId: string; productName: string;
+  productNumber: string | null; colorCodes: { color: string; code: string }[];
+  images: string[]; size: string; color: string; quantity: number; price: number;
+  confirmedAt: string | null; orderBatchId: string | null;
+  orderDate: string; note: string | null;
+};
+
+type ConfirmedSummaryRow = { brand: string; mall: string; distinctCount: number; totalQty: number };
 
 function flattenOrders(orders: Order[]): FlatRow[] {
   return orders.flatMap((o) =>
@@ -86,7 +101,7 @@ function flattenOrders(orders: Order[]): FlatRow[] {
       itemCancelLocked: item.cancelLocked, orderCancelLocked: o.cancelLocked,
       confirmedAt: item.confirmedAt, arrivedAt: item.arrivedAt, cancelledAt: item.cancelledAt,
       outOfStockAt: item.outOfStockAt, unshippedAt: item.unshippedAt,
-      note: o.note,
+      note: o.note, orderBatchId: (item as any).orderBatchId ?? null,
       isOnSale: item.isOnSale, saleType: item.saleType, saleValue: item.saleValue,
     }))
   );
@@ -892,9 +907,382 @@ function MallOrderView({ rows, brandMallMap }: { rows: FlatRow[]; brandMallMap: 
   );
 }
 
+// ── 영수증 대조 모달 (Phase 4 — 스텁) ────────────────────────────────────────
+function InvoiceModal({
+  brand, batchFilter, batches, onClose, onArrived,
+}: {
+  brand: string;
+  batchFilter: string;
+  batches: Array<OrderBatch & { label: string }>;
+  onClose: () => void;
+  onArrived: (itemIds: string[]) => Promise<void>;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-bold text-slate-800">{brand} 영수증 대조</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+        </div>
+        <p className="text-sm text-slate-500 text-center py-8">영수증 대조 기능은 다음 단계에서 구현됩니다.</p>
+      </div>
+    </div>
+  );
+}
+
 const TABS = ['주문접수', '주문확인', '일별입고', '전체입고', '품절/미송'] as const;
 type Tab = typeof TABS[number];
 const QUEUE_PAGE_SIZE = 50;
+
+// ── 발주 차수 헬퍼 ─────────────────────────────────────────────────────────────
+function batchLabel(batch: OrderBatch, idx: number, sameDayIdx: number): string {
+  const dt  = new Date(batch.createdAt);
+  const kst = new Date(dt.getTime() + 9 * 60 * 60 * 1000);
+  const mm  = String(kst.getUTCMonth() + 1).padStart(2, '0');
+  const dd  = String(kst.getUTCDate()).padStart(2, '0');
+  const hh  = String(kst.getUTCHours()).padStart(2, '0');
+  const min = String(kst.getUTCMinutes()).padStart(2, '0');
+  return `${mm}/${dd} ${sameDayIdx + 1}차 (${hh}:${min}) · ${batch.itemCount}건`;
+}
+
+function annotateBatches(batches: OrderBatch[]): Array<OrderBatch & { label: string }> {
+  // newest-first from API → number same-day batches ascending
+  const sorted = [...batches].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const dayCounters: Record<string, number> = {};
+  const withLabel = sorted.map((b) => {
+    const kst  = new Date(new Date(b.createdAt).getTime() + 9 * 60 * 60 * 1000);
+    const day  = kst.toISOString().slice(0, 10);
+    const sidx = dayCounters[day] ?? 0;
+    dayCounters[day] = sidx + 1;
+    return { ...b, label: batchLabel(b, sidx, sidx) };
+  });
+  return withLabel.sort((a, b) => b.createdAt.localeCompare(a.createdAt)); // newest-first for dropdown
+}
+
+function waitDays(confirmedAt: string | null): number {
+  if (!confirmedAt) return 0;
+  return Math.floor((Date.now() - new Date(confirmedAt).getTime()) / 86400000);
+}
+
+// ── ConfirmedMallView — 주문확인 탭 쇼핑몰별 모드 (서버 데이터 기반) ─────────────
+function ConfirmedMallView({
+  batches,
+  batchFilter,
+  onBatchFilterChange,
+  onRefresh,
+  markAsArrived,  // (itemIds: string[]) => Promise<void>
+}: {
+  batches: Array<OrderBatch & { label: string }>;
+  batchFilter: string;
+  onBatchFilterChange: (v: string) => void;
+  onRefresh: () => void;
+  markAsArrived: (itemIds: string[]) => Promise<void>;
+}) {
+  const [summary, setSummary]           = useState<ConfirmedSummaryRow[]>([]);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [openBrand, setOpenBrand]       = useState<string | null>(null);
+  const [brandItems, setBrandItems]     = useState<Record<string, ConfirmedItem[]>>({});
+  const [brandLoading, setBrandLoading] = useState<Record<string, boolean>>({});
+
+  const fetchSummary = useCallback(async (batch: string) => {
+    setSummaryLoading(true);
+    try {
+      const params = new URLSearchParams({ mode: 'summary', batch });
+      const d = await fetch(`/api/admin/confirmed-items?${params}`).then((r) => r.json());
+      setSummary(Array.isArray(d) ? d : []);
+    } finally { setSummaryLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchSummary(batchFilter); }, [batchFilter, fetchSummary]);
+
+  const handleBrandToggle = useCallback(async (brand: string) => {
+    if (openBrand === brand) { setOpenBrand(null); return; }
+    setOpenBrand(brand);
+    if (!brandItems[brand]) {
+      setBrandLoading((p) => ({ ...p, [brand]: true }));
+      try {
+        const params = new URLSearchParams({ mode: 'detail', brand, batch: batchFilter });
+        const d = await fetch(`/api/admin/confirmed-items?${params}`).then((r) => r.json());
+        setBrandItems((p) => ({ ...p, [brand]: Array.isArray(d) ? d : [] }));
+      } finally { setBrandLoading((p) => ({ ...p, [brand]: false })); }
+    }
+  }, [openBrand, brandItems, batchFilter]);
+
+  // 브랜드 필터 바뀌면 열린 브랜드 데이터 초기화
+  useEffect(() => { setBrandItems({}); setOpenBrand(null); }, [batchFilter]);
+
+  // mall → brands grouping
+  const UNASSIGNED = '미분류';
+  const mallGroups = useMemo(() => {
+    const byMall = new Map<string, ConfirmedSummaryRow[]>();
+    summary.forEach((row) => {
+      const mall = row.mall || UNASSIGNED;
+      const list = byMall.get(mall) ?? [];
+      list.push(row);
+      byMall.set(mall, list);
+    });
+    const entries = Array.from(byMall.entries()).sort(([a], [b]) => {
+      if (a === UNASSIGNED) return 1;
+      if (b === UNASSIGNED) return -1;
+      return a.localeCompare(b, 'ko');
+    });
+    return entries;
+  }, [summary]);
+
+  if (summaryLoading)
+    return <div className="text-center py-12 text-slate-400 text-sm">로딩 중...</div>;
+  if (summary.length === 0)
+    return <div className="text-center py-12 text-slate-400 text-sm">확인 대기 중인 상품이 없습니다.</div>;
+
+  return (
+    <div className="space-y-5">
+      {mallGroups.map(([mall, brands]) => {
+        const mallQty = brands.reduce((s, b) => s + b.totalQty, 0);
+        return (
+          <div key={mall}>
+            <div className="flex items-center gap-2 mb-2 px-1">
+              <span className="text-sm font-bold text-slate-700">🏬 {mall}</span>
+              <span className="text-xs text-slate-400">브랜드 {brands.length}개 · 총 수량 {mallQty}</span>
+            </div>
+            <div className="space-y-2">
+              {brands.map((row) => (
+                <ConfirmedBrandAccordion
+                  key={row.brand}
+                  summary={row}
+                  isOpen={openBrand === row.brand}
+                  items={brandItems[row.brand] ?? []}
+                  loading={brandLoading[row.brand] ?? false}
+                  batchFilter={batchFilter}
+                  batches={batches}
+                  onToggle={() => handleBrandToggle(row.brand)}
+                  onArrived={async (itemIds) => {
+                    await markAsArrived(itemIds);
+                    // 캐시 무효화 + 요약 재로드
+                    setBrandItems((p) => { const n = { ...p }; delete n[row.brand]; return n; });
+                    fetchSummary(batchFilter);
+                    onRefresh();
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── ConfirmedBrandAccordion — 브랜드 1개 (주문확인 쇼핑몰별 모드용) ──────────────
+function ConfirmedBrandAccordion({
+  summary, isOpen, items, loading, batchFilter, batches, onToggle, onArrived,
+}: {
+  summary: ConfirmedSummaryRow;
+  isOpen: boolean;
+  items: ConfirmedItem[];
+  loading: boolean;
+  batchFilter: string;
+  batches: Array<OrderBatch & { label: string }>;
+  onToggle: () => void;
+  onArrived: (itemIds: string[]) => Promise<void>;
+}) {
+  const [openGroupKey, setOpenGroupKey] = useState<string | null>(null);
+  const [copyDone, setCopyDone]         = useState(false);
+  const [invoiceOpen, setInvoiceOpen]   = useState(false);
+
+  // 같은 상품+컬러+사이즈 묶기
+  const productGroups = useMemo(() => {
+    const map = new Map<string, ConfirmedItem[]>();
+    items.forEach((it) => {
+      const key = `${it.productId}::${it.color}::${it.size}`;
+      const list = map.get(key) ?? [];
+      list.push(it);
+      map.set(key, list);
+    });
+    return Array.from(map.entries()).map(([key, grpItems]) => ({
+      key,
+      productId:     grpItems[0].productId,
+      productName:   grpItems[0].productName,
+      productNumber: grpItems[0].productNumber,
+      colorCodes:    grpItems[0].colorCodes,
+      images:        grpItems[0].images,
+      size:          grpItems[0].size,
+      color:         grpItems[0].color,
+      quantity:      grpItems.reduce((s, it) => s + it.quantity, 0),
+      items:         grpItems,
+    }));
+  }, [items]);
+
+  const noteCount = items.filter((it) => it.note).length;
+
+  const handleCopy = useCallback(async () => {
+    // 서버에서 필터된 전체 데이터 재요청
+    const params = new URLSearchParams({ mode: 'detail', brand: summary.brand, batch: batchFilter });
+    const allItems: ConfirmedItem[] = await fetch(`/api/admin/confirmed-items?${params}`).then((r) => r.json());
+
+    const today = new Date();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const batchSuffix = batchFilter !== 'all'
+      ? ` ${batches.find((b) => b.id === batchFilter)?.label.split(' ')[1] ?? ''}` : '';
+
+    // 같은 상품+컬러+사이즈 합산
+    const grouped = new Map<string, { name: string; color: string; size: string; qty: number }>();
+    allItems.forEach((it) => {
+      const key = `${it.productName}::${it.color}::${it.size}`;
+      const cur = grouped.get(key) ?? { name: it.productName, color: it.color, size: it.size, qty: 0 };
+      cur.qty += it.quantity;
+      grouped.set(key, cur);
+    });
+
+    const lines = Array.from(grouped.values()).map((g) => `${g.name} / ${g.color} / ${g.size}  ${g.qty}장`);
+    const totalQty = allItems.reduce((s, it) => s + it.quantity, 0);
+    const msg = `[꿈비샵] ${mm}/${dd}${batchSuffix} 주문\n${lines.join('\n')}\n총 ${totalQty}장`;
+
+    await navigator.clipboard.writeText(msg);
+    setCopyDone(true);
+    setTimeout(() => setCopyDone(false), 2000);
+  }, [summary.brand, batchFilter, batches]);
+
+  return (
+    <div className="card overflow-hidden">
+      {/* 헤더 */}
+      <div className={`flex items-center justify-between px-5 py-3.5 ${isOpen ? 'bg-primary-50 border-b border-primary-100' : 'hover:bg-slate-50'}`}>
+        <button onClick={onToggle} className="flex items-center gap-3 flex-1 text-left">
+          <span className={`text-sm font-bold ${isOpen ? 'text-primary-700' : 'text-slate-800'}`}>{summary.brand}</span>
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isOpen ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+            상품 {summary.distinctCount}종 · 총 {summary.totalQty}장
+          </span>
+          {noteCount > 0 && (
+            <span className="flex-shrink-0 inline-flex items-center justify-center min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full">
+              {noteCount}
+            </span>
+          )}
+          <svg className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+        {/* 액션 버튼 */}
+        <div className="flex items-center gap-2 ml-3 flex-shrink-0">
+          <button
+            onClick={handleCopy}
+            className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${copyDone ? 'bg-green-500 text-white' : 'bg-yellow-400 text-yellow-900 hover:bg-yellow-500'}`}
+          >
+            {copyDone ? '✓ 복사됨' : '카톡 메시지 복사'}
+          </button>
+          <button
+            onClick={() => setInvoiceOpen(true)}
+            className="text-xs px-3 py-1.5 rounded-lg font-medium bg-slate-700 text-white hover:bg-slate-800 transition-colors"
+          >
+            영수증 대조
+          </button>
+        </div>
+      </div>
+
+      {/* 상품 목록 */}
+      {isOpen && (
+        <div>
+          {loading ? (
+            <div className="text-center py-8 text-slate-400 text-sm">로딩 중...</div>
+          ) : items.length === 0 ? (
+            <div className="text-center py-8 text-slate-400 text-sm">상품이 없습니다.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
+                <tr>
+                  <th className="px-4 py-2.5 text-left">상품명</th>
+                  <th className="px-4 py-2.5 text-left">컬러</th>
+                  <th className="px-4 py-2.5 text-left">사이즈</th>
+                  <th className="px-4 py-2.5 text-center">수량</th>
+                  <th className="px-4 py-2.5 text-left">주문 건수</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {productGroups.map((g) => {
+                  const isGrpOpen = openGroupKey === g.key;
+                  return (
+                    <Fragment key={g.key}>
+                      <tr
+                        onClick={() => setOpenGroupKey(isGrpOpen ? null : g.key)}
+                        className="hover:bg-slate-50 transition-colors cursor-pointer"
+                      >
+                        <td className="px-4 py-2.5 font-medium text-slate-800 max-w-[200px]">
+                          <span className="flex items-center gap-1.5">
+                            <span className="truncate">{g.productName}</span>
+                          </span>
+                          {g.productNumber && (
+                            <span className="block text-xs text-slate-400 font-mono">
+                              {colorCodeFor(g.productNumber, g.colorCodes, g.color) ?? g.productNumber}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-xs text-slate-600">{g.color || '-'}</td>
+                        <td className="px-4 py-2.5 text-xs text-slate-600">{g.size || '-'}</td>
+                        <td className="px-4 py-2.5 text-center font-semibold text-slate-800">{g.quantity}</td>
+                        <td className="px-4 py-2.5 text-xs text-slate-500">
+                          <span className="inline-flex items-center gap-1">
+                            {g.items.length}건
+                            <svg className={`w-3 h-3 text-slate-400 transition-transform ${isGrpOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </span>
+                        </td>
+                      </tr>
+                      {isGrpOpen && g.items.map((it) => {
+                        const days = waitDays(it.confirmedAt);
+                        const batchLabel = it.confirmedAt
+                          ? (batches.find((b) => b.id === it.orderBatchId)?.label ?? '이전')
+                          : '이전';
+                        return (
+                          <tr key={it.itemId} className={`text-xs ${days > 7 ? 'bg-orange-50/60 text-orange-800' : 'bg-slate-50/60 text-slate-500'}`}>
+                            <td className="px-4 py-2 pl-8" colSpan={3}>
+                              {it.userName}
+                              <span className="ml-1.5 text-slate-400 font-mono">#{it.orderId.slice(-6).toUpperCase()}</span>
+                              <span className="ml-2 text-[10px] text-slate-400">{batchLabel}</span>
+                              {it.note && (
+                                <span className="ml-1.5 text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[10px]">
+                                  {it.note}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2 text-center font-medium">{it.quantity}</td>
+                            <td className="px-4 py-2 text-slate-400">
+                              {days > 0 && <span className={`font-semibold ${days > 7 ? 'text-orange-600' : 'text-slate-500'}`}>D+{days}</span>}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+              <tfoot className="border-t border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700">
+                <tr>
+                  <td colSpan={3} className="px-4 py-2">합계</td>
+                  <td className="px-4 py-2 text-center">{items.reduce((s, it) => s + it.quantity, 0)}</td>
+                  <td className="px-4 py-2" />
+                </tr>
+              </tfoot>
+            </table>
+          )}
+        </div>
+      )}
+
+      {/* 영수증 대조 모달 */}
+      {invoiceOpen && (
+        <InvoiceModal
+          brand={summary.brand}
+          batchFilter={batchFilter}
+          batches={batches}
+          onClose={() => setInvoiceOpen(false)}
+          onArrived={async (itemIds) => {
+            setInvoiceOpen(false);
+            await onArrived(itemIds);
+          }}
+        />
+      )}
+    </div>
+  );
+}
 
 /* ── 메인 페이지 ── */
 export default function AdminOrdersPage() {
@@ -924,6 +1312,9 @@ export default function AdminOrdersPage() {
     cancelTo: '' as string,
   });
   const [pendingViewMode, setPendingViewMode] = useState<'전체' | '쇼핑몰별'>('쇼핑몰별');
+  const [confirmedViewMode, setConfirmedViewMode] = useState<'쇼핑몰별' | '전체'>('쇼핑몰별');
+  const [confirmedBatchFilter, setConfirmedBatchFilter] = useState<string>('all');
+  const [confirmedBatches, setConfirmedBatches] = useState<Array<OrderBatch & { label: string }>>([]);
   const [brandMallMap, setBrandMallMap] = useState<Record<string, string>>({});
 
   // 품절/미송 비고 모달
@@ -947,6 +1338,10 @@ export default function AdminOrdersPage() {
       const map: Record<string, string> = {};
       d.forEach((b: any) => { if (b.mallLocation) map[b.name] = b.mallLocation; });
       setBrandMallMap(map);
+    });
+    fetch('/api/admin/order-batches').then((r) => r.json()).then((d) => {
+      if (!Array.isArray(d)) return;
+      setConfirmedBatches(annotateBatches(d));
     });
   }, []);
 
@@ -1272,6 +1667,13 @@ export default function AdminOrdersPage() {
   const markAsUnshipped  = actionUnshipped;
   const confirmSelected  = actionConfirm;
 
+  // 쇼핑몰별 뷰에서 특정 아이템 ID들을 직접 입고 처리 (invoice modal 포함)
+  const markAsArrivedById = useCallback(async (itemIds: string[]) => {
+    if (!itemIds.length) return;
+    await fetch('/api/orders/items', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemIds }) });
+    await refreshData();
+  }, [refreshData]);
+
   const handleDeleteInbound = async (id: string) => {
     await fetch(`/api/inbound/${id}`, { method: 'DELETE' });
     setTodayInbounds((p) => p.filter((i) => i.id !== id));
@@ -1395,22 +1797,63 @@ export default function AdminOrdersPage() {
           {/* ── 주문확인 ── */}
           {tab === '주문확인' && (
             <div>
-              <div className="flex items-center gap-3 mb-4">
-                <input className="input max-w-xs text-sm" placeholder="아이디, 브랜드, 상품명..." value={search} onChange={(e) => setSearch(e.target.value)} />
-                <p className="text-xs text-slate-400">입고 처리된 항목은 자동으로 일별입고로 이동됩니다.</p>
+              <div className="flex items-center gap-3 mb-4 flex-wrap">
+                <div className="flex bg-slate-100 rounded-lg p-1 gap-1">
+                  {(['쇼핑몰별', '전체'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => setConfirmedViewMode(mode)}
+                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${confirmedViewMode === mode ? 'bg-white text-primary-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                      {mode} 보기
+                    </button>
+                  ))}
+                </div>
+                {confirmedViewMode === '쇼핑몰별' ? (
+                  <>
+                    <select
+                      value={confirmedBatchFilter}
+                      onChange={(e) => setConfirmedBatchFilter(e.target.value)}
+                      className="input text-sm w-64"
+                    >
+                      <option value="all">전체 대기</option>
+                      {confirmedBatches.map((b) => (
+                        <option key={b.id} value={b.id}>{b.label}</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-slate-400">브랜드별로 발주 현황을 확인하세요.</p>
+                  </>
+                ) : (
+                  <>
+                    <input className="input max-w-xs text-sm" placeholder="아이디, 브랜드, 상품명..." value={search} onChange={(e) => setSearch(e.target.value)} />
+                    <p className="text-xs text-slate-400">입고 처리된 항목은 자동으로 일별입고로 이동됩니다.</p>
+                  </>
+                )}
               </div>
-              <QueuePagination page={confirmedPage} totalPages={totalConfirmedPages} onChange={setConfirmedPage}
-                totalCount={confirmedRows.length} label="전체 확인대기:" />
-              <OrderTable
-                rows={pagedConfirmed} selected={selected} onToggleRow={toggleRow} onToggleAll={toggleAllConfirmed}
-                actions={[
-                  { label: '✓ 입고 처리', color: 'bg-emerald-600', onClick: markAsArrived },
-                  { label: '품절 처리', color: 'bg-orange-500', onClick: markAsOutOfStock },
-                  { label: '미송 처리', color: 'bg-purple-600', onClick: markAsUnshipped },
-                  { label: '취소불가 잠금', color: 'bg-red-500', onClick: () => setCancelLock(true) },
-                  { label: '취소 허용', color: 'bg-slate-500', onClick: () => setCancelLock(false) },
-                ]}
-              />
+              {confirmedViewMode === '쇼핑몰별' ? (
+                <ConfirmedMallView
+                  batches={confirmedBatches}
+                  batchFilter={confirmedBatchFilter}
+                  onBatchFilterChange={setConfirmedBatchFilter}
+                  onRefresh={refreshData}
+                  markAsArrived={markAsArrivedById}
+                />
+              ) : (
+                <>
+                  <QueuePagination page={confirmedPage} totalPages={totalConfirmedPages} onChange={setConfirmedPage}
+                    totalCount={confirmedRows.length} label="전체 확인대기:" />
+                  <OrderTable
+                    rows={pagedConfirmed} selected={selected} onToggleRow={toggleRow} onToggleAll={toggleAllConfirmed}
+                    actions={[
+                      { label: '✓ 입고 처리', color: 'bg-emerald-600', onClick: markAsArrived },
+                      { label: '품절 처리', color: 'bg-orange-500', onClick: markAsOutOfStock },
+                      { label: '미송 처리', color: 'bg-purple-600', onClick: markAsUnshipped },
+                      { label: '취소불가 잠금', color: 'bg-red-500', onClick: () => setCancelLock(true) },
+                      { label: '취소 허용', color: 'bg-slate-500', onClick: () => setCancelLock(false) },
+                    ]}
+                  />
+                </>
+              )}
             </div>
           )}
 

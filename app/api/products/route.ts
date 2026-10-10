@@ -7,6 +7,7 @@ import { calcFinalPrice } from '@/lib/utils';
 import { upsertBrandNotice } from '@/lib/notify';
 import { translateAndSaveProduct } from '@/lib/translate';
 import { buildProductSearchWhere } from '@/lib/productSearch';
+import { buildAdminProductWhere } from '@/lib/productAdminFilter';
 
 // 어드민 상품 목록에 실제로 쓰이는 필드만 — description/번역 텍스트 등 무거운 컬럼은 제외
 const ADMIN_PRODUCT_SELECT = {
@@ -48,8 +49,45 @@ export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   const isAuthenticated = !!session;
 
-  const conditions: any[] = [];
-  if (admin !== '1') conditions.push({ isActive: true });
+  // ── Admin mode: server-side pagination + filters ──────────────────────────
+  if (admin === '1') {
+    const page  = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10));
+    const limit = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') ?? '50', 10)));
+    const where = buildAdminProductWhere({
+      q, brand,
+      active:    searchParams.get('active'),
+      sale:      searchParams.get('sale'),
+      carryover: searchParams.get('carryover'),
+      season:    searchParams.get('season'),
+      gender:    searchParams.get('gender'),
+      remark:    searchParams.get('remark'),
+    });
+
+    const [products, total, brandsRaw, seasonsRaw, gendersRaw] = await Promise.all([
+      prisma.product.findMany({
+        where,
+        select: ADMIN_PRODUCT_SELECT,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      prisma.product.count({ where }),
+      prisma.product.findMany({ select: { brand: true }, where: { brand: { not: null } }, distinct: ['brand'], orderBy: { brand: 'asc' } }),
+      prisma.product.findMany({ select: { season: true }, where: { season: { not: null } }, distinct: ['season'], orderBy: { season: 'asc' } }),
+      prisma.product.findMany({ select: { gender: true }, where: { gender: { not: null } }, distinct: ['gender'], orderBy: { gender: 'asc' } }),
+    ]);
+
+    return NextResponse.json({
+      products,
+      total,
+      brands:  brandsRaw.map((b) => b.brand).filter(Boolean),
+      seasons: seasonsRaw.map((s) => s.season).filter(Boolean),
+      genders: gendersRaw.map((g) => g.gender).filter(Boolean),
+    });
+  }
+
+  // ── Customer mode ─────────────────────────────────────────────────────────
+  const conditions: any[] = [{ isActive: true }];
   if (category) conditions.push({ OR: [{ category: { slug: category } }, { sizeCategory: { slug: category } }] });
   if (q)        conditions.push(await buildProductSearchWhere(q, isAuthenticated));
   if (brand && isAuthenticated) conditions.push({ brand: { contains: brand, mode: 'insensitive' } });
@@ -57,19 +95,15 @@ export async function GET(req: NextRequest) {
   if (isOnSale === '1') conditions.push({ isOnSale: true });
   if (isNew === '1')    conditions.push({ createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } });
 
-  const where: any = conditions.length > 0 ? { AND: conditions } : {};
+  const where: any = { AND: conditions };
 
   const products = await prisma.product.findMany({
     where,
-    select: admin === '1' ? ADMIN_PRODUCT_SELECT : CUSTOMER_PRODUCT_SELECT,
+    select: CUSTOMER_PRODUCT_SELECT,
     orderBy: sort === 'price_asc' ? { price: 'asc' } : sort === 'price_desc' ? { price: 'desc' } : { createdAt: 'desc' },
   });
 
-  if (admin === '1') return NextResponse.json(products);
-
-  // 고객용: 세션에서 등급 확인 후 해당 가격만 반환
   const grade = (session?.user as any)?.dealerGrade ?? 'REGULAR';
-
   const result = products.map((p) => {
     const gradePrice = p.prices.find((pr) => pr.grade === grade);
     const basePrice  = gradePrice ? Number(gradePrice.price) : Number(p.price);

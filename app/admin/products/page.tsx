@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { formatPrice, getSaleLabel, DEALER_GRADE_ORDER } from '@/lib/utils';
 import Pagination from '@/components/ui/Pagination';
@@ -61,44 +61,93 @@ function ColFilter({
 }
 
 export default function AdminProductsPage() {
-  const [products, setProducts]     = useState<Product[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [search, setSearch]         = useState('');
-  const [brandFilter, setBrandFilter] = useState('');
-  const [page, setPage] = useState(1);
-  const [selected, setSelected]     = useState<Set<string>>(new Set());
+  const [products, setProducts]   = useState<Product[]>([]);
+  const [total, setTotal]         = useState(0);
+  const [brands, setBrands]       = useState<string[]>([]);
+  const [seasons, setSeasons]     = useState<string[]>([]);
+  const [genders, setGenders]     = useState<string[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [page, setPage]           = useState(1);
+  const [selected, setSelected]   = useState<Set<string>>(new Set());
+  const [selectAllMatching, setSelectAllMatching] = useState(false);
   const [editRemark, setEditRemark] = useState<{ id: string; value: string } | null>(null);
+  const [fetchKey, setFetchKey]   = useState(0);
 
-  // 컬럼 헤더 필터 드롭다운
-  const [openFilter, setOpenFilter]         = useState<string | null>(null);
-  const [filterActive, setFilterActive]     = useState(''); // '' | 'active' | 'inactive'
-  const [filterSale, setFilterSale]         = useState(''); // '' | 'sale' | 'nosale'
-  const [filterCarryOver, setFilterCarryOver] = useState(''); // '' | 'yes' | 'no'
-  const [filterSeason, setFilterSeason]     = useState('');
-  const [filterGender, setFilterGender]     = useState('');
-  const [filterRemark, setFilterRemark]     = useState(''); // '' | 'has' | 'none'
+  const [openFilter, setOpenFilter]           = useState<string | null>(null);
+  const [search, setSearch]                   = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [brandFilter, setBrandFilter]         = useState('');
+  const [filterActive, setFilterActive]       = useState('');
+  const [filterSale, setFilterSale]           = useState('');
+  const [filterCarryOver, setFilterCarryOver] = useState('');
+  const [filterSeason, setFilterSeason]       = useState('');
+  const [filterGender, setFilterGender]       = useState('');
+  const [filterRemark, setFilterRemark]       = useState('');
 
-  // 일괄 SALE 모달
-  const [bulkModal, setBulkModal]   = useState(false);
-  const [bulkType, setBulkType]     = useState<'RATE' | 'AMOUNT'>('RATE');
-  const [bulkValue, setBulkValue]   = useState('');
+  const [bulkModal, setBulkModal]     = useState(false);
+  const [bulkType, setBulkType]       = useState<'RATE' | 'AMOUNT'>('RATE');
+  const [bulkValue, setBulkValue]     = useState('');
   const [bulkLoading, setBulkLoading] = useState(false);
 
-  useEffect(() => {
-    fetch('/api/products?admin=1').then((r) => r.json()).then((d) => { setProducts(d); setLoading(false); });
-  }, []);
-
   const [translateStatus, setTranslateStatus] = useState<{ total: number; translated: number } | null>(null);
-  const [translating, setTranslating] = useState(false);
+  const [translating, setTranslating]         = useState(false);
   const [translateResult, setTranslateResult] = useState('');
+
+  // Debounce search input
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Reset to page 1 when filters change (not page itself)
+  useEffect(() => {
+    setPage(1);
+    setSelected(new Set());
+    setSelectAllMatching(false);
+  }, [debouncedSearch, brandFilter, filterActive, filterSale, filterCarryOver, filterSeason, filterGender, filterRemark]);
+
+  // Build current filter params (used for both fetch and bulk actions)
+  const filterParams = useMemo(() => {
+    const p: Record<string, string> = {};
+    if (debouncedSearch) p.q = debouncedSearch;
+    if (brandFilter)     p.brand = brandFilter;
+    if (filterActive)    p.active = filterActive;
+    if (filterSale)      p.sale = filterSale;
+    if (filterCarryOver) p.carryover = filterCarryOver;
+    if (filterSeason)    p.season = filterSeason;
+    if (filterGender)    p.gender = filterGender;
+    if (filterRemark)    p.remark = filterRemark;
+    return p;
+  }, [debouncedSearch, brandFilter, filterActive, filterSale, filterCarryOver, filterSeason, filterGender, filterRemark]);
+
+  // Fetch products from server
+  const fetchProducts = useCallback(() => {
+    const params = new URLSearchParams({ admin: '1', page: String(page), limit: String(PAGE_SIZE), ...filterParams });
+    setLoading(true);
+    fetch(`/api/products?${params}`)
+      .then((r) => r.json())
+      .then((d) => {
+        setProducts(Array.isArray(d.products) ? d.products : []);
+        setTotal(d.total ?? 0);
+        setBrands(Array.isArray(d.brands) ? d.brands : []);
+        setSeasons(Array.isArray(d.seasons) ? d.seasons : []);
+        setGenders(Array.isArray(d.genders) ? d.genders : []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [page, filterParams, fetchKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { fetchProducts(); }, [fetchProducts]);
+
+  useEffect(() => { loadTranslateStatus(); }, []);
 
   const loadTranslateStatus = () => {
     fetch('/api/admin/translate-products').then((r) => r.json()).then((d) => setTranslateStatus(d)).catch(() => {});
   };
 
-  useEffect(() => { loadTranslateStatus(); }, []);
+  const refetch = () => { setFetchKey((k) => k + 1); setSelected(new Set()); setSelectAllMatching(false); };
 
-  // 바깥 클릭 시 필터 드롭다운 닫기
+  // Close filter dropdowns on outside click
   useEffect(() => {
     if (!openFilter) return;
     const handler = () => setOpenFilter(null);
@@ -135,11 +184,14 @@ export default function AdminProductsPage() {
     if (res.ok) setProducts((prev) => prev.filter((p) => p.id !== id));
   };
 
-  const toggleSelect = (id: string) => setSelected((prev) => {
-    const next = new Set(prev);
-    next.has(id) ? next.delete(id) : next.add(id);
-    return next;
-  });
+  const toggleSelect = (id: string) => {
+    setSelectAllMatching(false);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
 
   const saveRemark = async (id: string, remark: string) => {
     await fetch(`/api/products/${id}`, {
@@ -151,97 +203,95 @@ export default function AdminProductsPage() {
     setEditRemark(null);
   };
 
-  const brands  = useMemo(() => Array.from(new Set(products.map((p) => p.brand).filter(Boolean))).sort() as string[], [products]);
-  const seasons = useMemo(() => Array.from(new Set(products.map((p) => p.season).filter(Boolean))).sort() as string[], [products]);
-  const genders = useMemo(() => Array.from(new Set(products.map((p) => p.gender).filter(Boolean))).sort() as string[], [products]);
-
-  const filtered = useMemo(() => products.filter((p) => {
-    const q = search.toLowerCase();
-    const matchQ         = !search        || p.name.toLowerCase().includes(q) || (p.brand?.toLowerCase().includes(q) ?? false) || (p.productNumber?.toLowerCase().includes(q) ?? false);
-    const matchB         = !brandFilter   || p.brand === brandFilter;
-    const matchActive    = !filterActive  || (filterActive    === 'active'   ? p.isActive   : !p.isActive);
-    const matchSale      = !filterSale    || (filterSale      === 'sale'     ? p.isOnSale   : !p.isOnSale);
-    const matchCarryOver = !filterCarryOver || (filterCarryOver === 'yes'   ? p.isCarryOver : !p.isCarryOver);
-    const matchSeason    = !filterSeason  || p.season  === filterSeason;
-    const matchGender    = !filterGender  || p.gender  === filterGender;
-    const matchRemark    = !filterRemark  || (filterRemark === 'has' ? !!p.remark : !p.remark);
-    return matchQ && matchB && matchActive && matchSale && matchCarryOver && matchSeason && matchGender && matchRemark;
-  }), [products, search, brandFilter, filterActive, filterSale, filterCarryOver, filterSeason, filterGender, filterRemark]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paged = useMemo(() => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [filtered, page]);
-
-  useEffect(() => { setPage(1); }, [search, brandFilter, filterActive, filterSale, filterCarryOver, filterSeason, filterGender, filterRemark]);
-  useEffect(() => { setPage((p) => Math.min(p, totalPages)); }, [totalPages]);
-
-  // 안전을 위해 "전체 선택"은 현재 페이지에 보이는 항목만 대상으로 한다.
-  const allSelected = paged.length > 0 && paged.every((p) => selected.has(p.id));
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const allPageSelected = products.length > 0 && products.every((p) => selected.has(p.id));
 
   const toggleAll = () => {
-    if (allSelected) setSelected((prev) => { const next = new Set(prev); paged.forEach((p) => next.delete(p.id)); return next; });
-    else setSelected((prev) => { const next = new Set(prev); paged.forEach((p) => next.add(p.id)); return next; });
+    setSelectAllMatching(false);
+    if (allPageSelected) {
+      setSelected((prev) => { const next = new Set(prev); products.forEach((p) => next.delete(p.id)); return next; });
+    } else {
+      setSelected((prev) => { const next = new Set(prev); products.forEach((p) => next.add(p.id)); return next; });
+    }
   };
+
+  // How many items will the bulk action affect
+  const bulkCount = selectAllMatching ? total : selected.size;
+
+  // Body for bulk fetch requests
+  const bulkBody = () =>
+    selectAllMatching
+      ? { all: true, ...filterParams }
+      : { productIds: Array.from(selected) };
 
   const handleBulkSale = async () => {
     if (!bulkValue || Number(bulkValue) <= 0) { alert('할인 값을 입력해주세요.'); return; }
+    const confirmMsg = selectAllMatching
+      ? `전체 조건에 맞는 ${total}건 모두에 SALE을 적용하시겠습니까?`
+      : `선택된 ${selected.size}개 상품에 SALE을 적용하시겠습니까?`;
+    if (!confirm(confirmMsg)) return;
     setBulkLoading(true);
-    const productIds = Array.from(selected);
     await fetch('/api/products/bulk-sale', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ productIds, saleType: bulkType, saleValue: Number(bulkValue) }),
+      body: JSON.stringify({ ...bulkBody(), saleType: bulkType, saleValue: Number(bulkValue) }),
     });
-    setProducts((prev) => prev.map((p) => selected.has(p.id) ? { ...p, isOnSale: true, saleType: bulkType, saleValue: Number(bulkValue) } : p));
-    setBulkModal(false); setBulkValue(''); setSelected(new Set());
+    setBulkModal(false); setBulkValue('');
+    refetch();
     setBulkLoading(false);
   };
 
   const handleBulkRemoveSale = async () => {
-    if (!confirm(`선택된 ${selected.size}개 상품의 SALE을 해제하시겠습니까?`)) return;
-    const productIds = Array.from(selected);
+    const confirmMsg = selectAllMatching
+      ? `전체 조건에 맞는 ${total}건 모두의 SALE을 해제하시겠습니까?`
+      : `선택된 ${selected.size}개 상품의 SALE을 해제하시겠습니까?`;
+    if (!confirm(confirmMsg)) return;
     await fetch('/api/products/bulk-sale', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ productIds }),
+      body: JSON.stringify(bulkBody()),
     });
-    setProducts((prev) => prev.map((p) => selected.has(p.id) ? { ...p, isOnSale: false, saleType: null, saleValue: null } : p));
-    setSelected(new Set());
+    refetch();
   };
 
   const handleBulkCarryOver = async () => {
-    if (!confirm(`선택된 ${selected.size}개 상품을 이월상품으로 적용하시겠습니까?`)) return;
-    const productIds = Array.from(selected);
+    const confirmMsg = selectAllMatching
+      ? `전체 조건에 맞는 ${total}건 모두를 이월상품으로 적용하시겠습니까?`
+      : `선택된 ${selected.size}개 상품을 이월상품으로 적용하시겠습니까?`;
+    if (!confirm(confirmMsg)) return;
     await fetch('/api/products/bulk-carryover', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ productIds }),
+      body: JSON.stringify(bulkBody()),
     });
-    setProducts((prev) => prev.map((p) => selected.has(p.id) ? { ...p, isCarryOver: true } : p));
-    setSelected(new Set());
+    refetch();
   };
 
   const handleBulkRemoveCarryOver = async () => {
-    if (!confirm(`선택된 ${selected.size}개 상품의 이월상품을 해제하시겠습니까?`)) return;
-    const productIds = Array.from(selected);
+    const confirmMsg = selectAllMatching
+      ? `전체 조건에 맞는 ${total}건 모두의 이월상품을 해제하시겠습니까?`
+      : `선택된 ${selected.size}개 상품의 이월상품을 해제하시겠습니까?`;
+    if (!confirm(confirmMsg)) return;
     await fetch('/api/products/bulk-carryover', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ productIds }),
+      body: JSON.stringify(bulkBody()),
     });
-    setProducts((prev) => prev.map((p) => selected.has(p.id) ? { ...p, isCarryOver: false } : p));
-    setSelected(new Set());
+    refetch();
   };
 
   const handleBulkSetActive = async (isActive: boolean) => {
-    const productIds = Array.from(selected);
-    if (!confirm(`선택된 ${productIds.length}개 상품을 ${isActive ? '판매중으로 전환' : '숨김 처리'}하시겠습니까?`)) return;
+    const label = isActive ? '판매중으로 전환' : '숨김 처리';
+    const confirmMsg = selectAllMatching
+      ? `전체 조건에 맞는 ${total}건 모두를 ${label}하시겠습니까?`
+      : `선택된 ${selected.size}개 상품을 ${label}하시겠습니까?`;
+    if (!confirm(confirmMsg)) return;
     await fetch('/api/products/bulk-active', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ productIds, isActive }),
+      body: JSON.stringify({ ...bulkBody(), isActive }),
     });
-    setProducts((prev) => prev.map((p) => selected.has(p.id) ? { ...p, isActive } : p));
-    setSelected(new Set());
+    refetch();
   };
 
   const filterProps = { openFilter, onOpen: setOpenFilter };
@@ -271,17 +321,32 @@ export default function AdminProductsPage() {
           value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
-      {/* 일괄 SALE 액션 바 */}
-      {selected.size > 0 && (
-        <div className="flex items-center gap-3 mb-4 p-3 bg-primary-50 border border-primary-200 rounded-xl">
-          <span className="text-sm font-medium text-primary-800">{selected.size}개 선택됨</span>
+      {/* 일괄 액션 바 */}
+      {(selected.size > 0 || selectAllMatching) && (
+        <div className="flex items-center gap-3 mb-1 p-3 bg-primary-50 border border-primary-200 rounded-xl flex-wrap">
+          <span className="text-sm font-medium text-primary-800">
+            {selectAllMatching ? `전체 ${total}건 선택됨` : `${selected.size}개 선택됨`}
+          </span>
           <button onClick={() => setBulkModal(true)} className="text-sm bg-red-500 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-red-600">SALE 적용</button>
           <button onClick={handleBulkRemoveSale} className="text-sm border border-slate-300 text-slate-600 px-3 py-1.5 rounded-lg font-medium hover:bg-slate-100">SALE 해제</button>
           <button onClick={handleBulkCarryOver} className="text-sm bg-amber-500 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-amber-600">이월 적용</button>
           <button onClick={handleBulkRemoveCarryOver} className="text-sm border border-slate-300 text-slate-600 px-3 py-1.5 rounded-lg font-medium hover:bg-slate-100">이월 해제</button>
           <button onClick={() => handleBulkSetActive(false)} className="text-sm bg-slate-500 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-slate-600">일괄 숨김</button>
           <button onClick={() => handleBulkSetActive(true)} className="text-sm bg-green-600 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-green-700">일괄 판매중으로</button>
-          <button onClick={() => setSelected(new Set())} className="text-xs text-slate-400 hover:text-slate-600 ml-auto">선택 해제</button>
+          <button onClick={() => { setSelected(new Set()); setSelectAllMatching(false); }} className="text-xs text-slate-400 hover:text-slate-600 ml-auto">선택 해제</button>
+        </div>
+      )}
+
+      {/* 전체 N건 선택 제안 배너 */}
+      {allPageSelected && !selectAllMatching && total > PAGE_SIZE && (
+        <div className="flex items-center gap-3 mb-4 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-700">
+          <span>이 페이지 {products.length}개가 선택됨.</span>
+          <button
+            onClick={() => setSelectAllMatching(true)}
+            className="font-semibold underline underline-offset-2 hover:text-blue-900"
+          >
+            전체 조건에 맞는 {total}건 모두 선택하기
+          </button>
         </div>
       )}
 
@@ -290,7 +355,7 @@ export default function AdminProductsPage() {
       ) : (
         <>
           <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-            <p className="text-xs text-slate-400">{filtered.length}개 상품</p>
+            <p className="text-xs text-slate-400">전체 {total}개 상품</p>
             <Pagination page={page} totalPages={totalPages} onChange={setPage} />
           </div>
           <div className="card overflow-hidden">
@@ -299,7 +364,7 @@ export default function AdminProductsPage() {
                 <thead className="bg-slate-50 border-b border-slate-100">
                   <tr className="text-left text-xs text-slate-400 uppercase">
                     <th className="px-3 py-3">
-                      <input type="checkbox" checked={allSelected} onChange={toggleAll} className="w-4 h-4 accent-primary-600 cursor-pointer" />
+                      <input type="checkbox" checked={allPageSelected} onChange={toggleAll} className="w-4 h-4 accent-primary-600 cursor-pointer" />
                     </th>
                     <th className="px-3 py-3">관리</th>
                     <th className="px-3 py-3">
@@ -344,10 +409,10 @@ export default function AdminProductsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {paged.map((product) => (
-                    <tr key={product.id} className={`text-slate-700 hover:bg-slate-50 ${selected.has(product.id) ? 'bg-primary-50/40' : ''}`}>
+                  {products.map((product) => (
+                    <tr key={product.id} className={`text-slate-700 hover:bg-slate-50 ${selected.has(product.id) || selectAllMatching ? 'bg-primary-50/40' : ''}`}>
                       <td className="px-3 py-2">
-                        <input type="checkbox" checked={selected.has(product.id)} onChange={() => toggleSelect(product.id)} className="w-4 h-4 accent-primary-600 cursor-pointer" />
+                        <input type="checkbox" checked={selected.has(product.id) || selectAllMatching} onChange={() => toggleSelect(product.id)} className="w-4 h-4 accent-primary-600 cursor-pointer" />
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex gap-2">
@@ -435,7 +500,7 @@ export default function AdminProductsPage() {
                       </td>
                     </tr>
                   ))}
-                  {filtered.length === 0 && (
+                  {products.length === 0 && (
                     <tr><td colSpan={11} className="text-center py-12 text-slate-400">상품이 없습니다.</td></tr>
                   )}
                 </tbody>
@@ -453,7 +518,11 @@ export default function AdminProductsPage() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
             <h3 className="font-bold text-slate-800">일괄 SALE 적용</h3>
-            <p className="text-sm text-slate-500">선택된 <strong>{selected.size}개</strong> 상품에 동일 할인 정책을 적용합니다.</p>
+            <p className="text-sm text-slate-500">
+              {selectAllMatching
+                ? <>전체 조건에 맞는 <strong>{total}건</strong>에 동일 할인 정책을 적용합니다.</>
+                : <>선택된 <strong>{selected.size}개</strong> 상품에 동일 할인 정책을 적용합니다.</>}
+            </p>
             <div>
               <label className="block text-xs text-slate-500 mb-1">할인 방식</label>
               <select className="input text-sm w-full" value={bulkType} onChange={(e) => setBulkType(e.target.value as any)}>

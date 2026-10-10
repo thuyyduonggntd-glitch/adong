@@ -4,25 +4,26 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { hasGoodsAccess } from '@/lib/adminAccess';
 import { upsertBrandNotice } from '@/lib/notify';
+import { buildAdminProductWhere } from '@/lib/productAdminFilter';
+
+function resolveWhere(body: any) {
+  if (body.all === true) return buildAdminProductWhere(body);
+  if (Array.isArray(body.productIds) && body.productIds.length > 0) return { id: { in: body.productIds as string[] } };
+  return null;
+}
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session || !hasGoodsAccess((session.user as any)?.role, (session.user as any)?.adminZones))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { productIds } = await req.json();
-  if (!Array.isArray(productIds) || productIds.length === 0)
-    return NextResponse.json({ error: '상품을 선택해주세요.' }, { status: 400 });
+  const body = await req.json();
+  const where = resolveWhere(body);
+  if (!where) return NextResponse.json({ error: '상품을 선택해주세요.' }, { status: 400 });
 
-  await prisma.product.updateMany({
-    where: { id: { in: productIds } },
-    data:  { isCarryOver: true },
-  });
+  await prisma.product.updateMany({ where, data: { isCarryOver: true } });
 
-  const products = await prisma.product.findMany({
-    where: { id: { in: productIds } },
-    select: { brand: true, name: true },
-  });
+  const products = await prisma.product.findMany({ where, select: { brand: true, name: true } });
   const groups = new Map<string, number>();
   for (const p of products) {
     const key = p.brand?.trim() || p.name;
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
     await upsertBrandNotice(displayName, 'CARRYOVER', groupCount);
   }
 
-  return NextResponse.json({ ok: true, count: productIds.length });
+  return NextResponse.json({ ok: true, count: products.length });
 }
 
 export async function DELETE(req: NextRequest) {
@@ -40,14 +41,11 @@ export async function DELETE(req: NextRequest) {
   if (!session || !hasGoodsAccess((session.user as any)?.role, (session.user as any)?.adminZones))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { productIds } = await req.json();
-  if (!Array.isArray(productIds) || productIds.length === 0)
-    return NextResponse.json({ error: '상품을 선택해주세요.' }, { status: 400 });
+  const body = await req.json();
+  const where = resolveWhere(body);
+  if (!where) return NextResponse.json({ error: '상품을 선택해주세요.' }, { status: 400 });
 
-  await prisma.product.updateMany({
-    where: { id: { in: productIds } },
-    data:  { isCarryOver: false },
-  });
+  const { count } = await prisma.product.updateMany({ where, data: { isCarryOver: false } });
 
-  return NextResponse.json({ ok: true, count: productIds.length });
+  return NextResponse.json({ ok: true, count });
 }

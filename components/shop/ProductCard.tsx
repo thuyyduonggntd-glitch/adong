@@ -69,7 +69,7 @@ export default function ProductCard({ product: rawProduct, isWishlisted = false,
     <Link href={`/home/products/${product.id}`} className="group card overflow-hidden hover:shadow-md transition-shadow">
       <div className="relative aspect-square bg-primary-50 overflow-hidden">
         <Image
-          src={product.images[0] || (product as any).colorImages?.[0]?.imageUrl || 'https://placehold.co/400x400/EFF6FF/2563EB?text=상품'}
+          src={product.images[0] || (product as any).colorImages?.[0]?.imageUrl || '/no-image.svg'}
           alt={product.name}
           fill
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"

@@ -161,7 +161,7 @@ function ProductCells({ product, size, color, quantity, price, orderCreatedAt, i
       : priceNoSurcharge + saleValue + sizeSurcharge
     : null;
   const total    = price * quantity;
-  const imgSrc   = resolveColorImage(color, product.colorImages, product.images, 'https://placehold.co/48x48');
+  const imgSrc   = resolveColorImage(color, product.colorImages, product.images, '/no-image.svg');
   return (
     <>
       <td className="px-3 py-3">
@@ -227,7 +227,7 @@ function ProductCardInfo({ product, size, color, quantity, price, isOnSale, sale
       : priceNoSurcharge + saleValue + sizeSurcharge
     : null;
   const total  = price * quantity;
-  const imgSrc = resolveColorImage(color, product.colorImages, product.images, 'https://placehold.co/56x56');
+  const imgSrc = resolveColorImage(color, product.colorImages, product.images, '/no-image.svg');
   return (
     <div className="flex gap-3">
       <Link href={`/home/products/${product.id}`} className="flex-shrink-0">
@@ -1128,7 +1128,7 @@ export default function OrdersManagementPage() {
             {pagedCancelledItems.map((item) => (
               <div key={item.id} className="card p-4 border-red-100 flex items-start gap-4">
                 <div className="relative w-14 h-14 rounded-lg overflow-hidden bg-slate-100 flex-shrink-0">
-                  <Image src={item.product.images[0] || 'https://placehold.co/56x56'} alt={item.product.name} fill loading="lazy" sizes="64px" className="object-cover grayscale" />
+                  <Image src={item.product.images[0] || '/no-image.svg'} alt={item.product.name} fill loading="lazy" sizes="64px" className="object-cover grayscale" />
                 </div>
                 <div className="flex-1 min-w-0">
                   {item.product.brand && <p className="text-xs text-primary-600 font-semibold mb-0.5">{item.product.brand}</p>}
@@ -1237,7 +1237,7 @@ export default function OrdersManagementPage() {
                               return (
                                 <div key={oi.id} className={`p-3 flex gap-3 ${delivered ? 'bg-green-50/40' : oi.deliveryRequestedAt ? 'bg-amber-50/40' : ''}`}>
                                   <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-emerald-50 flex-shrink-0">
-                                    <Image src={oi.product.images[0] || 'https://placehold.co/44x44'} alt={oi.product.name} fill loading="lazy" sizes="64px" className="object-cover" />
+                                    <Image src={oi.product.images[0] || '/no-image.svg'} alt={oi.product.name} fill loading="lazy" sizes="64px" className="object-cover" />
                                   </div>
                                   <div className="flex-1 min-w-0">
                                     {oi.product.brand && <span className="block w-fit text-xs font-semibold text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded mb-0.5">{oi.product.brand}</span>}
@@ -1268,7 +1268,7 @@ export default function OrdersManagementPage() {
                               );
                             }
                             const si    = it as SupplierItem;
-                            const img   = si.product?.images?.[0] || 'https://placehold.co/44x44';
+                            const img   = si.product?.images?.[0] || '/no-image.svg';
                             const name  = si.product?.name || si.name;
                             const brand = si.product?.brand || si.brand;
                             const productNumber = colorCodeFor(si.product?.productNumber, si.product?.colorCodes, si.color) ?? si.product?.productNumber;
@@ -1328,7 +1328,7 @@ export default function OrdersManagementPage() {
                                 const delivered = oi.order.status === 'DELIVERED';
                                 return (
                                   <tr key={oi.id} className={`transition-colors ${delivered ? 'bg-green-50/40' : oi.deliveryRequestedAt ? 'bg-amber-50/40' : 'hover:bg-emerald-50/20'}`}>
-                                    <td className="px-4 py-3"><div className="relative w-11 h-11 rounded-lg overflow-hidden bg-emerald-50"><Image src={oi.product.images[0] || 'https://placehold.co/44x44'} alt={oi.product.name} fill loading="lazy" sizes="64px" className="object-cover" /></div></td>
+                                    <td className="px-4 py-3"><div className="relative w-11 h-11 rounded-lg overflow-hidden bg-emerald-50"><Image src={oi.product.images[0] || '/no-image.svg'} alt={oi.product.name} fill loading="lazy" sizes="64px" className="object-cover" /></div></td>
                                     <td className="px-4 py-3">{oi.product.brand ? <span className="text-xs font-semibold text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded">{oi.product.brand}</span> : <span className="text-slate-300 text-xs">-</span>}</td>
                                     <td className="px-4 py-3 font-medium text-slate-800 max-w-[160px]">
                                       <span className="block truncate">{oi.product.name}</span>
@@ -1356,7 +1356,7 @@ export default function OrdersManagementPage() {
                                 );
                               } else {
                                 const si    = it as SupplierItem;
-                                const img   = si.product?.images?.[0] || 'https://placehold.co/44x44';
+                                const img   = si.product?.images?.[0] || '/no-image.svg';
                                 const name  = si.product?.name || si.name;
                                 const brand = si.product?.brand || si.brand;
                                 const productNumber = colorCodeFor(si.product?.productNumber, si.product?.colorCodes, si.color) ?? si.product?.productNumber;

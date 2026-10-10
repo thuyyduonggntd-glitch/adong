@@ -97,7 +97,7 @@ export default async function ProductsPage({ searchParams }: Props) {
     }),
     prisma.product.count({ where: { AND: productConditions } }),
     getCachedCategories(),
-    getCachedSeasons(brand),
+    getCachedSeasons(isAuthenticated ? brand : undefined),
     isAuthenticated ? getCachedBrands() : Promise.resolve([] as { id: string; name: string; image: string | null }[]),
   ]);
 
@@ -162,8 +162,8 @@ export default async function ProductsPage({ searchParams }: Props) {
         </div>
       )}
 
-      {/* 브랜드 선택 시: 시즌별 필터 */}
-      {brand && (
+      {/* 브랜드 선택 시: 시즌별 필터 — 로그인한 회원만 */}
+      {isAuthenticated && brand && (
         <div className="mb-5 pl-3 border-l-2 border-primary-200 space-y-3">
           {uniqueSeasons.length > 0 && (
             <div>

@@ -54,9 +54,14 @@ const HOME_PRODUCT_SELECT = {
   colorImages: { orderBy: { sequence: 'asc' as const }, take: 1, select: { imageUrl: true } },
 } as const;
 
-/* 브랜드 섹션은 세션과 무관 — 캐싱된 쿼리라 거의 즉시 렌더링되고, 나머지와 별도로 스트리밍된다. */
+/* TOP 10은 세션과 무관하게 스트리밍. A-Z 전체 목록은 로그인한 회원만 전달 — 미인증 시 빈 배열. */
 async function HomeBrandSection() {
-  const [topBrands, allBrands] = await Promise.all([getTopBrands(), getAllBrands()]);
+  const session = await getServerSession(authOptions);
+  const isAuthenticated = !!session;
+  const [topBrands, allBrands] = await Promise.all([
+    getTopBrands(),
+    isAuthenticated ? getAllBrands() : Promise.resolve([] as { id: string; name: string; image: string | null }[]),
+  ]);
   if (topBrands.length === 0 && allBrands.length === 0) return null;
   return <BrandSection topBrands={topBrands} allBrands={allBrands} />;
 }

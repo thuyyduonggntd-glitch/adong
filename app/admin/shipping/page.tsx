@@ -532,7 +532,7 @@ export default function AdminShippingPage() {
                                       <td className="px-4 py-2.5 text-xs font-semibold text-primary-600">{it.brand}</td>
                                       <td className="px-4 py-2.5">
                                         <div className="relative w-9 h-9 rounded overflow-hidden bg-slate-100">
-                                          <Image src={it.image || 'https://placehold.co/36x36'} alt={it.name} fill className="object-cover" />
+                                          <Image src={it.image || '/no-image.svg'} alt={it.name} fill className="object-cover" />
                                         </div>
                                       </td>
                                       <td className="px-4 py-2.5 font-medium text-slate-800 max-w-[140px]">
@@ -664,7 +664,7 @@ export default function AdminShippingPage() {
                                           <td className="px-4 py-2.5 text-xs font-semibold text-primary-600">{it.product.brand || '-'}</td>
                                           <td className="px-4 py-2.5">
                                             <div className="relative w-9 h-9 rounded overflow-hidden bg-slate-100">
-                                              <Image src={it.product.images[0] || 'https://placehold.co/36x36'} alt={it.product.name} fill className="object-cover" />
+                                              <Image src={it.product.images[0] || '/no-image.svg'} alt={it.product.name} fill className="object-cover" />
                                             </div>
                                           </td>
                                           <td className="px-4 py-2.5 font-medium text-slate-800 max-w-[140px]">
@@ -766,7 +766,7 @@ export default function AdminShippingPage() {
                                       <td className="px-4 py-2.5 text-xs font-semibold text-primary-600">{it.brand}</td>
                                       <td className="px-4 py-2.5">
                                         <div className="relative w-9 h-9 rounded overflow-hidden bg-slate-100">
-                                          <Image src={it.image || 'https://placehold.co/36x36'} alt={it.name} fill className="object-cover" />
+                                          <Image src={it.image || '/no-image.svg'} alt={it.name} fill className="object-cover" />
                                         </div>
                                       </td>
                                       <td className="px-4 py-2.5 font-medium text-slate-800 max-w-[140px]">

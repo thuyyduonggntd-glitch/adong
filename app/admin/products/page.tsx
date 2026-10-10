@@ -363,7 +363,7 @@ export default function AdminProductsPage() {
                       </td>
                       <td className="px-3 py-2">
                         <div className="w-12 h-12 rounded-lg overflow-hidden bg-primary-50 flex-shrink-0">
-                          <img src={product.images[0] || 'https://placehold.co/48x48'} alt={product.name} className="w-full h-full object-cover" />
+                          <img src={product.images[0] || '/no-image.svg'} alt={product.name} className="w-full h-full object-cover" />
                         </div>
                       </td>
                       <td className="px-3 py-2">

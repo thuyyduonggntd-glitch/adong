@@ -107,7 +107,7 @@ function ProductCells({ product, brand, size, color, quantity, price, isOnSale, 
   onBrandClick?: (brand: string) => void;
   onEditPrice?: () => void;
 }) {
-  const imgSrc = resolveColorImage(color, product.colorImages, product.images, 'https://placehold.co/40x40/EFF6FF/2563EB?text=상품');
+  const imgSrc = resolveColorImage(color, product.colorImages, product.images, '/no-image.svg');
   return (
     <>
       <td className="px-3 py-3">
@@ -1641,7 +1641,7 @@ export default function AdminOrdersPage() {
                               </td>
                               <td className="px-3 py-3">
                                 <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-slate-100">
-                                  <Image src={row.image || 'https://placehold.co/40x40/EFF6FF/2563EB?text=상품'} alt={row.name} fill className="object-cover" />
+                                  <Image src={row.image || '/no-image.svg'} alt={row.name} fill className="object-cover" />
                                 </div>
                               </td>
                               <td className="px-3 py-3 font-medium text-slate-800 max-w-[160px]">

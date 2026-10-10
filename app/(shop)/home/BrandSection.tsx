@@ -61,36 +61,38 @@ export default function BrandSection({
         )}
       </div>
 
-      {/* A–Z 버튼 */}
-      <div className="flex flex-wrap gap-1 mb-5">
-        {ALPHABET.map((l) => {
-          const hasAny = allBrands.some((b) => b.name.toUpperCase().startsWith(l));
-          const active = letter === l;
-          return (
-            <button key={l} onClick={() => hasAny && handleLetter(l)} disabled={!hasAny}
-              className={`w-7 h-7 text-xs font-bold rounded transition-colors leading-none
-                ${active
-                  ? 'bg-primary-600 text-white'
-                  : hasAny
-                    ? 'bg-white border border-slate-200 text-slate-600 hover:border-primary-400 hover:text-primary-600'
-                    : 'bg-slate-50 text-slate-200 cursor-not-allowed border border-slate-100'
-                }`}>
-              {l}
-            </button>
-          );
-        })}
-        {/* 기타 (숫자·특수문자 등 A-Z로 시작하지 않는 브랜드) */}
-        <button onClick={handleEtc} disabled={!hasEtc}
-          className={`px-2 h-7 text-xs font-bold rounded transition-colors leading-none
-            ${letter === ETC
-              ? 'bg-primary-600 text-white'
-              : hasEtc
-                ? 'bg-white border border-slate-200 text-slate-600 hover:border-primary-400 hover:text-primary-600'
-                : 'bg-slate-50 text-slate-200 cursor-not-allowed border border-slate-100'
-            }`}>
-          {t('brandFilter.etc')}
-        </button>
-      </div>
+      {/* A–Z 버튼 — 로그인한 회원만 (allBrands가 있을 때) */}
+      {allBrands.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-5">
+          {ALPHABET.map((l) => {
+            const hasAny = allBrands.some((b) => b.name.toUpperCase().startsWith(l));
+            const active = letter === l;
+            return (
+              <button key={l} onClick={() => hasAny && handleLetter(l)} disabled={!hasAny}
+                className={`w-7 h-7 text-xs font-bold rounded transition-colors leading-none
+                  ${active
+                    ? 'bg-primary-600 text-white'
+                    : hasAny
+                      ? 'bg-white border border-slate-200 text-slate-600 hover:border-primary-400 hover:text-primary-600'
+                      : 'bg-slate-50 text-slate-200 cursor-not-allowed border border-slate-100'
+                  }`}>
+                {l}
+              </button>
+            );
+          })}
+          {/* 기타 (숫자·특수문자 등 A-Z로 시작하지 않는 브랜드) */}
+          <button onClick={handleEtc} disabled={!hasEtc}
+            className={`px-2 h-7 text-xs font-bold rounded transition-colors leading-none
+              ${letter === ETC
+                ? 'bg-primary-600 text-white'
+                : hasEtc
+                  ? 'bg-white border border-slate-200 text-slate-600 hover:border-primary-400 hover:text-primary-600'
+                  : 'bg-slate-50 text-slate-200 cursor-not-allowed border border-slate-100'
+              }`}>
+            {t('brandFilter.etc')}
+          </button>
+        </div>
+      )}
 
       {/* 브랜드 그리드 */}
       {isFiltered && filtered!.length === 0 ? (

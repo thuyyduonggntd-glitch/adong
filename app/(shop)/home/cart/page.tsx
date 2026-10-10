@@ -220,8 +220,8 @@ export default function CartPage() {
                   {(() => {
                     const productInfo = liveInfo?.[item.product.id];
                     const imgSrc = productInfo
-                      ? resolveColorImage(item.color, productInfo.colorImages, productInfo.images, item.product.image || 'https://placehold.co/80x80/EFF6FF/2563EB?text=상품')
-                      : (item.product.image || 'https://placehold.co/80x80/EFF6FF/2563EB?text=상품');
+                      ? resolveColorImage(item.color, productInfo.colorImages, productInfo.images, item.product.image || '/no-image.svg')
+                      : (item.product.image || '/no-image.svg');
                     return (
                       <Image
                         src={imgSrc}

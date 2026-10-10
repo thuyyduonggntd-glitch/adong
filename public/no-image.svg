@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <rect width="400" height="400" fill="#f1f5f9"/>
+  <rect x="140" y="140" width="120" height="90" rx="8" fill="#e2e8f0"/>
+  <circle cx="168" cy="164" r="10" fill="#cbd5e1"/>
+  <polyline points="140,210 175,175 200,195 230,165 260,210" fill="none" stroke="#cbd5e1" stroke-width="4" stroke-linejoin="round"/>
+  <text x="200" y="268" font-family="system-ui,sans-serif" font-size="18" fill="#94a3b8" text-anchor="middle">이미지 준비중</text>
+</svg>

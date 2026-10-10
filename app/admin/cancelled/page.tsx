@@ -109,7 +109,7 @@ function CancelTable({
             </thead>
             <tbody className="divide-y divide-slate-50">
               {pagedItems.map((it) => {
-                const imgSrc = resolveColorImage(it.color, it.product.colorImages, it.product.images, 'https://placehold.co/40x40/EFF6FF/2563EB?text=상품');
+                const imgSrc = resolveColorImage(it.color, it.product.colorImages, it.product.images, '/no-image.svg');
                 const isSel   = selected.has(it.id);
                 const isToday = new Date(it.cancelledAt).getTime() >= todayMidnight.getTime();
                 const wasConfirmed = !!it.confirmedAt;

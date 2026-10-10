@@ -11,7 +11,7 @@ import { localizeCategoryName } from '@/lib/productLocale';
 import { resolveColorImage } from '@/lib/productImages';
 import { noDownloadProps } from '@/lib/imageProtection';
 
-const PLACEHOLDER_IMG = 'https://placehold.co/600x600/EFF6FF/2563EB?text=상품';
+const PLACEHOLDER_IMG = '/no-image.svg';
 
 type BrandInfo = {
   notice: string | null;

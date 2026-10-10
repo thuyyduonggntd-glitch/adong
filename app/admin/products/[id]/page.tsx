@@ -335,7 +335,7 @@ export default function EditProductPage() {
         isCarryOver:     form.isCarryOver,
         saleType:        effectiveIsOnSale && saleValue ? saleType : null,
         saleValue:       effectiveIsOnSale && saleValue ? saleValue : null,
-        images:          images.length ? images : ['https://placehold.co/400x400/EFF6FF/2563EB?text=상품'],
+        images:          images.length ? images : ['/no-image.svg'],
         sizeImages,
         prices:          gradePrices,
         variants,

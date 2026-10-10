@@ -80,7 +80,7 @@ async function HomeProductGrid() {
     const gradePrice = product.prices.find((p) => p.grade === (grade as any));
     const basePrice  = gradePrice ? Number(gradePrice.price) : Number(product.price);
     const finalPrice = calcFinalPrice(basePrice, product.isOnSale, (product as any).saleType, (product as any).saleValue);
-    return { ...product, myGradePrice: basePrice, myFinalPrice: finalPrice };
+    return { ...product, brand: session ? (product as any).brand : null, myGradePrice: basePrice, myFinalPrice: finalPrice };
   });
 
   const wishlistIds = userId

@@ -35,7 +35,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const basePrice  = gradePrice ? Number(gradePrice.price) : Number(product.price);
   const finalPrice = calcFinalPrice(basePrice, product.isOnSale, product.saleType, product.saleValue);
 
-  return NextResponse.json({ ...product, prices: undefined, myGradePrice: basePrice, myFinalPrice: finalPrice });
+  const customerProduct: any = { ...product, prices: undefined, myGradePrice: basePrice, myFinalPrice: finalPrice };
+  if (!session) customerProduct.brand = null;
+
+  return NextResponse.json(customerProduct);
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {

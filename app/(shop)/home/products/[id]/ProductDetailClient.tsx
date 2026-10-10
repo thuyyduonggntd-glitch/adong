@@ -235,7 +235,7 @@ export default function ProductDetailClient({ product, brandInfo, hasBackorder }
               className="badge bg-primary-100 text-primary-700 text-xs hover:bg-primary-200 transition-colors cursor-pointer">
               {localizedCategoryName}
             </Link>
-            {product.brand && (
+            {session && product.brand && (
               <span className="inline-flex items-center gap-1">
                 <Link href={`/home/products?brand=${encodeURIComponent(product.brand)}`}
                   className="badge bg-slate-100 text-slate-600 text-xs font-semibold hover:bg-slate-200 transition-colors cursor-pointer">

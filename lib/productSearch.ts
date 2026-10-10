@@ -14,7 +14,7 @@ const getCachedKoreanTranslation = unstable_cache(
   { revalidate: 3600 }
 );
 
-function tokenMatchClause(token: string): Prisma.ProductWhereInput {
+function tokenMatchClause(token: string, includeBrand = true): Prisma.ProductWhereInput {
   return {
     OR: [
       ...SEARCHABLE_NAME_FIELDS.map(
@@ -23,7 +23,7 @@ function tokenMatchClause(token: string): Prisma.ProductWhereInput {
       ...SEARCHABLE_SEASON_FIELDS.map(
         (field) => ({ [field]: { contains: token, mode: 'insensitive' } } as Prisma.ProductWhereInput)
       ),
-      { brand: { contains: token, mode: 'insensitive' } },
+      ...(includeBrand ? [{ brand: { contains: token, mode: 'insensitive' } } as Prisma.ProductWhereInput] : []),
       { category: { OR: SEARCHABLE_CATEGORY_NAME_FIELDS.map(
         (field) => ({ [field]: { contains: token, mode: 'insensitive' } })
       ) } },
@@ -37,20 +37,20 @@ function tokenMatchClause(token: string): Prisma.ProductWhereInput {
  * - 검색어를 한국어로 자동 번역한 결과로도 함께 검색 — 상품별 번역 완료 여부와 무관하게
  *   어떤 언어로 검색해도 원본 한국어 상품명과 매칭될 수 있게 한다.
  */
-export async function buildProductSearchWhere(q: string): Promise<Prisma.ProductWhereInput> {
+export async function buildProductSearchWhere(q: string, includeBrand = true): Promise<Prisma.ProductWhereInput> {
   const trimmed = q.trim();
   const tokens = trimmed.split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return {};
 
   const variants: Prisma.ProductWhereInput[] = [
-    { AND: tokens.map(tokenMatchClause) },
+    { AND: tokens.map((t) => tokenMatchClause(t, includeBrand)) },
   ];
 
   const translated = await getCachedKoreanTranslation(trimmed).catch(() => null);
   if (translated && translated.trim().toLowerCase() !== trimmed.toLowerCase()) {
     const translatedTokens = translated.trim().split(/\s+/).filter(Boolean);
     if (translatedTokens.length > 0) {
-      variants.push({ AND: translatedTokens.map(tokenMatchClause) });
+      variants.push({ AND: translatedTokens.map((t) => tokenMatchClause(t, includeBrand)) });
     }
   }
 

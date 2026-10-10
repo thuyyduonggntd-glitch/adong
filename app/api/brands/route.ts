@@ -12,6 +12,8 @@ const MEMBER_SAFE_SELECT = {
 
 export async function GET() {
   const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json([]);
+
   const isAdmin = (session?.user as any)?.role === 'ADMIN';
 
   const brands = isAdmin

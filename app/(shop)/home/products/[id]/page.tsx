@@ -22,8 +22,8 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
     select: { id: true },
   });
 
-  // 브랜드 정보 조회 (브랜드명이 있으면 DB에서 추가 정보 로드)
-  const brandRecord = product.brand
+  // 브랜드 정보 조회 — 로그인한 회원만
+  const brandRecord = session && product.brand
     ? await prisma.brand.findUnique({ where: { name: product.brand } })
     : null;
 
@@ -34,6 +34,7 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
   const { prices: _prices, ...productRest } = product;
   const productForClient = {
     ...productRest,
+    brand:        session ? product.brand : null,
     price:        Number(product.price),
     saleValue:    product.saleValue ?? null,
     myGradePrice: basePrice,

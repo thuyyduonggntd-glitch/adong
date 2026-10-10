@@ -117,7 +117,7 @@ export default function ProductCard({ product: rawProduct, isWishlisted = false,
         )}
       </div>
       <div className="p-3">
-        {product.brand && (
+        {session && product.brand && (
           <p className="text-xs font-semibold text-primary-600 truncate">{product.brand}</p>
         )}
         <h3 className="text-sm font-medium text-slate-800 line-clamp-2 group-hover:text-primary-600 transition-colors">

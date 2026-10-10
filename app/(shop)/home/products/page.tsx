@@ -75,17 +75,19 @@ export default async function ProductsPage({ searchParams }: Props) {
     sort === 'popular'    ? { orderItems: { _count: 'desc' as const } } :
     { createdAt: 'desc' as const };
 
+  const session = await getServerSession(authOptions);
+  const isAuthenticated = !!session;
+
   const productConditions: any[] = [{ isActive: true }];
   if (category) productConditions.push({ OR: [{ category: { slug: category } }, { sizeCategory: { slug: category } }] });
-  if (q)        productConditions.push(await buildProductSearchWhere(q));
-  if (brand)    productConditions.push({ brand: { contains: brand, mode: 'insensitive' } });
+  if (q)        productConditions.push(await buildProductSearchWhere(q, isAuthenticated));
+  if (brand && isAuthenticated) productConditions.push({ brand: { contains: brand, mode: 'insensitive' } });
   if (season)   productConditions.push({ season: { contains: season, mode: 'insensitive' } });
   if (isOnSale === '1')    productConditions.push({ isOnSale: true });
   if (isCarryOver === '1') productConditions.push({ isCarryOver: true });
   if (isNew === '1')       productConditions.push({ createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } });
 
-  const [session, products, totalCount, categories, seasons, dbBrands] = await Promise.all([
-    getServerSession(authOptions),
+  const [rawProducts, totalCount, categories, seasons, dbBrands] = await Promise.all([
     prisma.product.findMany({
       where: { AND: productConditions },
       select: PRODUCTS_LIST_SELECT,
@@ -96,8 +98,10 @@ export default async function ProductsPage({ searchParams }: Props) {
     prisma.product.count({ where: { AND: productConditions } }),
     getCachedCategories(),
     getCachedSeasons(brand),
-    getCachedBrands(),
+    isAuthenticated ? getCachedBrands() : Promise.resolve([] as { id: string; name: string; image: string | null }[]),
   ]);
+
+  const products = isAuthenticated ? rawProducts : rawProducts.map((p) => ({ ...p, brand: null }));
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
@@ -151,10 +155,12 @@ export default async function ProductsPage({ searchParams }: Props) {
         <SortSelect defaultValue={sort} />
       </div>
 
-      {/* 브랜드 필터 A-Z */}
-      <div className="mb-4">
-        <BrandFilterAZ brands={dbBrands} activeBrand={brand} />
-      </div>
+      {/* 브랜드 필터 A-Z — 로그인한 회원만 */}
+      {isAuthenticated && (
+        <div className="mb-4">
+          <BrandFilterAZ brands={dbBrands} activeBrand={brand} />
+        </div>
+      )}
 
       {/* 브랜드 선택 시: 시즌별 필터 */}
       {brand && (

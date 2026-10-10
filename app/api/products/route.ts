@@ -45,11 +45,14 @@ export async function GET(req: NextRequest) {
   const isNew     = searchParams.get('isNew');
   const isOnSale  = searchParams.get('isOnSale');
 
+  const session = await getServerSession(authOptions);
+  const isAuthenticated = !!session;
+
   const conditions: any[] = [];
   if (admin !== '1') conditions.push({ isActive: true });
   if (category) conditions.push({ OR: [{ category: { slug: category } }, { sizeCategory: { slug: category } }] });
-  if (q)        conditions.push(await buildProductSearchWhere(q));
-  if (brand)    conditions.push({ brand: { contains: brand, mode: 'insensitive' } });
+  if (q)        conditions.push(await buildProductSearchWhere(q, isAuthenticated));
+  if (brand && isAuthenticated) conditions.push({ brand: { contains: brand, mode: 'insensitive' } });
   if (season)   conditions.push({ season: { contains: season, mode: 'insensitive' } });
   if (isOnSale === '1') conditions.push({ isOnSale: true });
   if (isNew === '1')    conditions.push({ createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } });
@@ -65,7 +68,6 @@ export async function GET(req: NextRequest) {
   if (admin === '1') return NextResponse.json(products);
 
   // 고객용: 세션에서 등급 확인 후 해당 가격만 반환
-  const session = await getServerSession(authOptions);
   const grade = (session?.user as any)?.dealerGrade ?? 'REGULAR';
 
   const result = products.map((p) => {

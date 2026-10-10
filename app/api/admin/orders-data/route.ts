@@ -25,7 +25,7 @@ export async function GET() {
         id: true, quantity: true, price: true, size: true, color: true,
         confirmedAt: true, arrivedAt: true, cancelledAt: true,
         outOfStockAt: true, unshippedAt: true, remark: true, cancelLocked: true,
-        isOnSale: true, saleType: true, saleValue: true,
+        isOnSale: true, saleType: true, saleValue: true, orderBatchId: true,
         product: {
           select: {
             id: true, name: true, images: true, brand: true, colors: true,

@@ -87,6 +87,7 @@ model User {
   shipping       Shipping[]
   inbounds       Inbound[]
   noticeSeens    NoticeSeen[]
+  orderBatches   OrderBatch[]
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 }
@@ -259,6 +260,9 @@ model OrderItem {
   isOnSale                Boolean   @default(false)
   saleType                SaleType?
   saleValue               Int?
+  orderBatchId            String?
+  orderBatch              OrderBatch?        @relation(fields: [orderBatchId], references: [id])
+  receiptItems            InvoiceReceiptItem[]
 
   @@index([orderId])
   @@index([productId])
@@ -266,6 +270,7 @@ model OrderItem {
   @@index([outOfStockAt])
   @@index([unshippedAt])
   @@index([cancelledAt])
+  @@index([orderBatchId])
 }
 
 model CartItem {
@@ -479,6 +484,48 @@ model Faq {
   updatedAt DateTime @updatedAt
 
   @@index([category])
+}
+
+// ── 발주 차수 (접수→확인 이동 1회 = 1차수) ─────────────────────────────────
+model OrderBatch {
+  id        String      @id @default(cuid())
+  createdAt DateTime    @default(now())
+  adminId   String
+  admin     User        @relation(fields: [adminId], references: [id])
+  itemCount Int
+  items     OrderItem[]
+
+  @@index([createdAt])
+  @@index([adminId])
+}
+
+// ── 영수증 대조 이력 ────────────────────────────────────────────────────────
+model InvoiceReceipt {
+  id            String               @id @default(cuid())
+  brand         String
+  totalQty      Int
+  checkedQty    Int
+  receiptNumber String?
+  imageUrl      String?
+  rawText       String?              @db.Text
+  items         InvoiceReceiptItem[]
+  createdAt     DateTime             @default(now())
+
+  @@index([brand])
+  @@index([createdAt])
+}
+
+model InvoiceReceiptItem {
+  id          String         @id @default(cuid())
+  receiptId   String
+  receipt     InvoiceReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  orderItemId String
+  orderItem   OrderItem      @relation(fields: [orderItemId], references: [id])
+  confirmedAt DateTime?
+  createdAt   DateTime       @default(now())
+
+  @@index([receiptId])
+  @@index([orderItemId])
 }
 
 model InboundItem {

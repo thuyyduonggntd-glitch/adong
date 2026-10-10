@@ -66,20 +66,24 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: true, count: itemIds.length });
   }
 
-  /* ── 주문확인 처리 (admin) ── */
+  /* ── 주문확인 처리 (admin) — 발주 차수 생성 ── */
   if (action === 'confirm') {
     if (!isAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const now = new Date();
+    const adminId = (session.user as any)?.id as string;
+    const batch = await prisma.orderBatch.create({
+      data: { adminId, itemCount: itemIds.length, createdAt: now },
+    });
     await prisma.orderItem.updateMany({
       where: { id: { in: itemIds } },
-      data: { confirmedAt: now },
+      data: { confirmedAt: now, orderBatchId: batch.id },
     });
     const confirmedItems = await prisma.orderItem.findMany({ where: { id: { in: itemIds } }, select: { orderId: true } });
     const confirmedOrderIds = Array.from(new Set(confirmedItems.map((i) => i.orderId)));
     for (const orderId of confirmedOrderIds) {
       await prisma.order.update({ where: { id: orderId }, data: { status: 'CONFIRMED' } });
     }
-    return NextResponse.json({ ok: true, count: itemIds.length });
+    return NextResponse.json({ ok: true, count: itemIds.length, batchId: batch.id });
   }
 
   /* ── 품절 처리 (admin) — 다른 상태 먼저 초기화 + 해당 색상·사이즈를 품절로 표시 ── */

@@ -732,9 +732,8 @@ function BrandAccordionRow({ brand, items, isOpen, onToggle }: { brand: string; 
         <div className="flex items-center gap-3">
           <span className={`text-sm font-bold ${isOpen ? 'text-primary-700' : 'text-slate-800'}`}>{brand}</span>
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isOpen ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
-            상품 {items.length}종
+            상품 {productGroups.length}종 · 총 {totalQty}장
           </span>
-          <span className="text-xs text-slate-400">총 수량 {totalQty}</span>
         </div>
         <svg
           className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
@@ -750,8 +749,8 @@ function BrandAccordionRow({ brand, items, isOpen, onToggle }: { brand: string; 
             <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
               <tr>
                 <th className="px-4 py-2.5 text-left">상품명</th>
-                <th className="px-4 py-2.5 text-left">사이즈</th>
                 <th className="px-4 py-2.5 text-left">컬러</th>
+                <th className="px-4 py-2.5 text-left">사이즈</th>
                 <th className="px-4 py-2.5 text-center">수량</th>
                 <th className="px-4 py-2.5 text-left">주문 건수</th>
               </tr>
@@ -784,8 +783,8 @@ function BrandAccordionRow({ brand, items, isOpen, onToggle }: { brand: string; 
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-2.5 text-xs text-slate-600">{g.size || '-'}</td>
                       <td className="px-4 py-2.5 text-xs text-slate-600">{g.color || '-'}</td>
+                      <td className="px-4 py-2.5 text-xs text-slate-600">{g.size || '-'}</td>
                       <td className="px-4 py-2.5 text-center font-semibold text-slate-800">{g.quantity}</td>
                       <td className="px-4 py-2.5 text-xs text-slate-500">
                         <span className="inline-flex items-center gap-1">

@@ -30,6 +30,7 @@ export const authOptions: NextAuthOptions = {
           name: user.name,
           role: user.role,
           dealerGrade: user.dealerGrade,
+          adminZones: user.adminZones,
         };
       },
     }),
@@ -40,6 +41,7 @@ export const authOptions: NextAuthOptions = {
         token.role = (user as any).role;
         token.id = user.id;
         token.dealerGrade = (user as any).dealerGrade;
+        token.adminZones = (user as any).adminZones ?? [];
         token.lastChecked = Date.now();
       } else if (token.id) {
         // 어드민이 등급/활성상태 변경 시 반영되도록 DB를 재조회하되, 페이지 하나에서 세션 체크가
@@ -50,11 +52,12 @@ export const authOptions: NextAuthOptions = {
         }
         const dbUser = await prisma.user.findUnique({
           where: { id: token.id as string },
-          select: { role: true, dealerGrade: true, isActive: true },
+          select: { role: true, dealerGrade: true, isActive: true, adminZones: true },
         });
         if (dbUser) {
           token.role = dbUser.role;
           token.dealerGrade = dbUser.dealerGrade;
+          token.adminZones = dbUser.adminZones;
           if (!dbUser.isActive) token.isInactive = true;
           token.lastChecked = Date.now();
         } else {
@@ -62,6 +65,7 @@ export const authOptions: NextAuthOptions = {
           token.id = undefined;
           token.role = undefined;
           token.dealerGrade = undefined;
+          token.adminZones = undefined;
         }
       }
       return token;
@@ -71,6 +75,7 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).role = token.role;
         (session.user as any).id = token.id;
         (session.user as any).dealerGrade = token.dealerGrade;
+        (session.user as any).adminZones = token.adminZones ?? [];
       }
       return session;
     },

@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { hasAdminAccess } from '@/lib/adminAccess';
+import { hasGoodsAccess } from '@/lib/adminAccess';
 import { downloadFromGCS, listProductImageUrls, listProductColorImageUrls } from '@/lib/gcs';
 import { CATEGORY_GROUPS } from '@/lib/categoryGroups';
 import { translateAndSaveCategory } from '@/lib/translate';
@@ -142,7 +142,7 @@ async function resolveCategory(p: ParsedRow) {
 
 export async function POST() {
   const session = await getServerSession(authOptions);
-  if (!session || !hasAdminAccess((session.user as any)?.role))
+  if (!session || !hasGoodsAccess((session.user as any)?.role, (session.user as any)?.adminZones))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   let buf: Buffer;

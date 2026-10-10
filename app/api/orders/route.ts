@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { hasAdminAccess } from '@/lib/adminAccess';
+import { hasOrdersAccess } from '@/lib/adminAccess';
 import { calcFinalPrice } from '@/lib/utils';
 
 export async function GET(req: NextRequest) {
@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const admin = new URL(req.url).searchParams.get('admin');
-  const isAdmin = hasAdminAccess((session.user as any)?.role);
+  const isAdmin = hasOrdersAccess((session.user as any)?.role, (session.user as any)?.adminZones);
 
   if (admin === '1' && isAdmin) {
     const { searchParams } = new URL(req.url);
@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
 // 어드민 일괄 상태 변경 + 취소잠금 설정
 export async function PATCH(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || !hasAdminAccess((session.user as any)?.role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!session || !hasOrdersAccess((session.user as any)?.role, (session.user as any)?.adminZones)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { orderIds, status, cancelLocked } = await req.json();
   if (!orderIds?.length) return NextResponse.json({ error: 'orderIds 필요' }, { status: 400 });

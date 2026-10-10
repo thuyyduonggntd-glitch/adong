@@ -3,7 +3,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { hasAdminAccess } from '@/lib/adminAccess';
+import { hasGoodsAccess, hasAdminAccess } from '@/lib/adminAccess';
 import { calcFinalPrice } from '@/lib/utils';
 import { upsertBrandNotice } from '@/lib/notify';
 import { translateAndSaveProduct, productSourceChanged } from '@/lib/translate';
@@ -43,7 +43,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
-  if (!session || !hasAdminAccess((session.user as any)?.role))
+  if (!session || !hasGoodsAccess((session.user as any)?.role, (session.user as any)?.adminZones))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const d = await req.json();
@@ -154,7 +154,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
 export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
-  if (!session || !hasAdminAccess((session.user as any)?.role))
+  if (!session || !hasGoodsAccess((session.user as any)?.role, (session.user as any)?.adminZones))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const existing = await prisma.product.findUnique({ where: { id: params.id }, select: { images: true } });

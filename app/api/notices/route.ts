@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { hasAdminAccess } from '@/lib/adminAccess';
+import { isAdmin } from '@/lib/adminAccess';
 import { translateAndSaveNotice } from '@/lib/translate';
 
 export async function GET(req: NextRequest) {
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   }
 
   const session = await getServerSession(authOptions);
-  if (!session || !hasAdminAccess((session.user as any)?.role))
+  if (!session || !isAdmin((session.user as any)?.role))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const notices = await prisma.notice.findMany({ orderBy: { createdAt: 'desc' }, take: 200 });
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || !hasAdminAccess((session.user as any)?.role))
+  if (!session || !isAdmin((session.user as any)?.role))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { title, content } = await req.json();

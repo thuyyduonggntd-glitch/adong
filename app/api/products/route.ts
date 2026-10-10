@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { hasAdminAccess } from '@/lib/adminAccess';
+import { hasGoodsAccess } from '@/lib/adminAccess';
 import { calcFinalPrice } from '@/lib/utils';
 import { upsertBrandNotice } from '@/lib/notify';
 import { translateAndSaveProduct } from '@/lib/translate';
@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || !hasAdminAccess((session.user as any)?.role))
+  if (!session || !hasGoodsAccess((session.user as any)?.role, (session.user as any)?.adminZones))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const d = await req.json();

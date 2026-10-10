@@ -2,13 +2,13 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { hasAdminAccess } from '@/lib/adminAccess';
+import { hasOrdersAccess } from '@/lib/adminAccess';
 
 // 관리자 배송관리 화면(/admin/shipping)이 마운트 시 4개 API를 따로 호출하던 것을 하나로 합친 엔드포인트.
 // /api/admin/orders-data, /api/home/orders-data 와 동일한 이유로 적용.
 export async function GET() {
   const session = await getServerSession(authOptions);
-  if (!session || !hasAdminAccess((session.user as any)?.role)) {
+  if (!session || !hasOrdersAccess((session.user as any)?.role, (session.user as any)?.adminZones)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

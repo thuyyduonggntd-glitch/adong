@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { hasAdminAccess } from '@/lib/adminAccess';
+import { hasOrdersAccess } from '@/lib/adminAccess';
 
 async function syncUserBalance(userId: string) {
   const dep = await prisma.transaction.aggregate({ where: { userId, type: 'DEPOSIT' },    _sum: { amount: true } });
@@ -17,7 +17,7 @@ async function syncUserBalance(userId: string) {
  */
 export async function PATCH(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || !hasAdminAccess((session.user as any)?.role))
+  if (!session || !hasOrdersAccess((session.user as any)?.role, (session.user as any)?.adminZones))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { updates } = await req.json();

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { hasAdminAccess } from '@/lib/adminAccess';
+import { hasOrdersAccess } from '@/lib/adminAccess';
 import { isWithinTimeWindow } from '@/lib/utils';
 
 function isWithinCancelWindow(cancelFrom: string | null, cancelTo: string | null): boolean {
@@ -52,7 +52,7 @@ export async function PATCH(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const isAdmin = hasAdminAccess((session.user as any)?.role);
+  const isAdmin = hasOrdersAccess((session.user as any)?.role, (session.user as any)?.adminZones);
   const userId  = (session.user as any)?.id;
   const body    = await req.json();
   const { itemIds, action, cancelLocked, arrivedAt, remark } = body;
@@ -362,7 +362,7 @@ export async function GET(req: NextRequest) {
   const cancelledToday = searchParams.get('cancelledToday');
   const outOfStockOrUnshipped = searchParams.get('outOfStockOrUnshipped');
 
-  const isAdmin = hasAdminAccess((session.user as any)?.role);
+  const isAdmin = hasOrdersAccess((session.user as any)?.role, (session.user as any)?.adminZones);
   const userId  = (session.user as any)?.id;
 
   // 오늘(KST 자정) 취소 카운트

@@ -3,20 +3,29 @@ import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import bcrypt from 'bcryptjs';
+import { isAdmin as checkIsAdmin, hasOrdersAccess } from '@/lib/adminAccess';
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const isAdmin = (session.user as any)?.role === 'ADMIN';
-  const isSelf  = (session.user as any)?.id === params.id;
-  if (!isAdmin && !isSelf) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  const role = (session.user as any)?.role as string | undefined;
+  const adminZones = (session.user as any)?.adminZones as string[] | undefined;
+  const isAdmin = checkIsAdmin(role);
+  const isOrdersStaff = hasOrdersAccess(role, adminZones);
+  const isSelf = (session.user as any)?.id === params.id;
+
+  if (!isAdmin && !isOrdersStaff && !isSelf)
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
   const data = await req.json();
 
+  // ADMIN: full edit incl. role. Orders-zone staff: no role/adminZones change. Self: basic fields only.
   const allowedScalarFields = isAdmin
     ? ['name', 'phone', 'address', 'shippingName', 'shippingPhone', 'depositAmount', 'email', 'shopName', 'businessNumber', 'shopSiteUrl', 'country', 'isActive', 'dealerGrade', 'role']
-    : ['name', 'phone', 'address', 'shippingName', 'shippingPhone'];
+    : isOrdersStaff
+      ? ['name', 'phone', 'address', 'shippingName', 'shippingPhone', 'depositAmount', 'email', 'shopName', 'businessNumber', 'shopSiteUrl', 'country', 'isActive', 'dealerGrade']
+      : ['name', 'phone', 'address', 'shippingName', 'shippingPhone'];
 
   const updateData: Record<string, any> = Object.fromEntries(
     Object.entries(data).filter(([k]) => allowedScalarFields.includes(k))

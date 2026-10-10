@@ -76,6 +76,7 @@ model User {
   dealerGrade    DealerGrade      @default(REGULAR)
   isActive       Boolean          @default(true)
   depositAmount  Float            @default(0)
+  adminZones     String[]         @default([])
   orders         Order[]
   cart           CartItem[]
   wishlist       Wishlist[]

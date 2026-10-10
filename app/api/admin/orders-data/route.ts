@@ -2,14 +2,14 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { hasAdminAccess } from '@/lib/adminAccess';
+import { hasOrdersAccess } from '@/lib/adminAccess';
 
 // 관리자 주문관리 화면(/admin/orders)이 마운트/새로고침 시 8개(또는 7개) API를 따로 호출하던 것을
 // 하나로 합친 엔드포인트. /api/home/orders-data 와 동일한 이유(서로 다른 라우트를 동시에 여러 개
 // 호출하면 서버리스 환경에서 각각 콜드스타트/커넥션을 새로 맺어 오히려 느려짐)로 적용.
 export async function GET() {
   const session = await getServerSession(authOptions);
-  if (!session || !hasAdminAccess((session.user as any)?.role)) {
+  if (!session || !hasOrdersAccess((session.user as any)?.role, (session.user as any)?.adminZones)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

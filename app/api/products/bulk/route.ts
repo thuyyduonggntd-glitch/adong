@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { hasAdminAccess } from '@/lib/adminAccess';
+import { hasGoodsAccess } from '@/lib/adminAccess';
 import { translateAndSaveCategory } from '@/lib/translate';
 import { CATEGORY_GROUPS } from '@/lib/categoryGroups';
 
@@ -11,7 +11,7 @@ const SIZE_CATEGORY_SLUGS = CATEGORY_GROUPS.find(g => g.key === 'size')!.slugs a
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || !hasAdminAccess((session.user as any)?.role))
+  if (!session || !hasGoodsAccess((session.user as any)?.role, (session.user as any)?.adminZones))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { products } = await req.json();

@@ -895,7 +895,7 @@ function MallOrderView({ rows, brandMallMap }: { rows: FlatRow[]; brandMallMap: 
 
 const TABS = ['주문접수', '주문확인', '일별입고', '전체입고', '품절/미송'] as const;
 type Tab = typeof TABS[number];
-const QUEUE_PAGE_SIZE = 40;
+const QUEUE_PAGE_SIZE = 50;
 
 /* ── 메인 페이지 ── */
 export default function AdminOrdersPage() {
@@ -1306,6 +1306,8 @@ export default function AdminOrdersPage() {
               {t}
               {t === '주문접수'  && pendingRows.length    > 0 && <span className="ml-1.5 text-xs bg-primary-600 text-white rounded-full px-1.5 py-0.5">{pendingRows.length}</span>}
               {t === '주문확인'  && confirmedRows.length  > 0 && <span className="ml-1.5 text-xs bg-green-600 text-white rounded-full px-1.5 py-0.5">{confirmedRows.length}</span>}
+              {t === '일별입고'  && todayArrivedItems.length > 0 && <span className="ml-1.5 text-xs bg-blue-500 text-white rounded-full px-1.5 py-0.5">{todayArrivedItems.length}</span>}
+              {t === '전체입고'  && allArrivedOrderItems.length > 0 && <span className="ml-1.5 text-xs bg-slate-500 text-white rounded-full px-1.5 py-0.5">{allArrivedOrderItems.length}</span>}
               {t === '품절/미송' && outStockUnshippedItems.length > 0 && <span className="ml-1.5 text-xs bg-orange-500 text-white rounded-full px-1.5 py-0.5">{outStockUnshippedItems.length}</span>}
               {selCnt > 0 && <span className="ml-1 text-xs bg-yellow-400 text-slate-800 rounded-full px-1.5 py-0.5 font-bold">{selCnt}✓</span>}
             </button>

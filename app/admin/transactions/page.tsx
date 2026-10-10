@@ -1,9 +1,10 @@
 'use client';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { formatPrice, formatDate } from '@/lib/utils';
 import Pagination from '@/components/ui/Pagination';
 
-const PAGE_SIZE = 40;
+const PAGE_SIZE     = 50; // ledger entries per user
+const USER_PER_PAGE = 50; // users per page
 
 /* ─── 타입 ─── */
 type UserSummary = {
@@ -47,13 +48,19 @@ function buildLedger(txs: TxEntry[]): LedgerRow[] {
 
 /* ─── 메인 ─── */
 export default function AdminTransactionsPage() {
-  const [users, setUsers]     = useState<UserSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch]   = useState('');
+  const [users, setUsers]               = useState<UserSummary[]>([]);
+  const [total, setTotal]               = useState(0);
+  const [totalSales, setTotalSales]     = useState(0);
+  const [totalDeposit, setTotalDeposit] = useState(0);
+  const [totalMisu, setTotalMisu]       = useState(0);
+  const [loading, setLoading]           = useState(true);
+  const [page, setPage]                 = useState(1);
+  const [search, setSearch]             = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
   /* 펼쳐진 회원 */
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [ledgerPage, setLedgerPage] = useState(1);
+  const [openId, setOpenId]             = useState<string | null>(null);
+  const [ledgerPage, setLedgerPage]     = useState(1);
 
   /* 펼쳐진 회원의 데이터 캐시 */
   const [cache, setCache] = useState<Record<string, { txs: TxEntry[]; loaded: boolean }>>({});
@@ -68,12 +75,33 @@ export default function AdminTransactionsPage() {
   const [editingTxId, setEditingTxId] = useState<string | null>(null);
   const [txEdit, setTxEdit] = useState({ type: 'DEPOSIT', amount: '', description: '', date: '' });
 
-  /* 회원 목록 로드 */
+  /* 검색 디바운스 */
   useEffect(() => {
-    fetch('/api/users?admin=1')
+    const t = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => { setPage(1); setOpenId(null); }, [debouncedSearch]);
+
+  /* 회원 목록 로드 (서버사이드 페이지네이션) */
+  const fetchUsers = useCallback(() => {
+    const params = new URLSearchParams({ page: String(page), limit: String(USER_PER_PAGE) });
+    if (debouncedSearch) params.set('q', debouncedSearch);
+    setLoading(true);
+    fetch(`/api/users?${params}`)
       .then((r) => r.json())
-      .then((d) => { setUsers(Array.isArray(d) ? d : []); setLoading(false); });
-  }, []);
+      .then((d) => {
+        setUsers(Array.isArray(d.users) ? d.users : []);
+        setTotal(d.total ?? 0);
+        setTotalSales(d.totalSales ?? 0);
+        setTotalDeposit(d.totalDeposit ?? 0);
+        setTotalMisu(d.totalMisu ?? 0);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [page, debouncedSearch]);
+
+  useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
   /* 특정 회원 데이터 로드 */
   const loadUserData = async (userId: string) => {
@@ -140,13 +168,7 @@ export default function AdminTransactionsPage() {
     setEditingTxId(null);
   };
 
-  const filtered = useMemo(() =>
-    users.filter((u) =>
-      u.name.toLowerCase().includes(search.toLowerCase()) ||
-      u.email.toLowerCase().includes(search.toLowerCase()) ||
-      (u.phone?.includes(search) ?? false) ||
-      (u.shopName?.toLowerCase().includes(search.toLowerCase()) ?? false)
-    ), [users, search]);
+  const totalPages = Math.max(1, Math.ceil(total / USER_PER_PAGE));
 
   /* ─────────── RENDER ─────────── */
   return (
@@ -157,23 +179,28 @@ export default function AdminTransactionsPage() {
           value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
-      {/* 전체 합계 */}
-      {!loading && filtered.length > 0 && (
+      {/* 전체 합계 — 서버사이드 집계로 전체 데이터 기준 */}
+      {!loading && (
         <div className="card p-4 mb-5 flex gap-6 flex-wrap text-sm">
-          <span className="text-slate-500">총 <strong className="text-slate-800">{filtered.length}명</strong></span>
-          <span className="text-slate-500">전체 매출 <strong className="text-slate-800">{formatPrice(filtered.reduce((s, u) => s + u.totalSales, 0))}</strong></span>
-          <span className="text-slate-500">전체 입금 <strong className="text-green-700">{formatPrice(filtered.reduce((s, u) => s + u.depositAmount, 0))}</strong></span>
-          <span className="text-slate-500">전체 미수금 <strong className="text-red-600">{formatPrice(filtered.reduce((s, u) => s + Math.max(0, -u.depositAmount), 0))}</strong></span>
+          <span className="text-slate-500">총 <strong className="text-slate-800">{total}명</strong></span>
+          <span className="text-slate-500">전체 매출 <strong className="text-slate-800">{formatPrice(totalSales)}</strong></span>
+          <span className="text-slate-500">전체 입금 <strong className="text-green-700">{formatPrice(totalDeposit)}</strong></span>
+          <span className="text-slate-500">전체 미수금 <strong className="text-red-600">{formatPrice(totalMisu)}</strong></span>
         </div>
       )}
 
       {loading ? (
         <div className="text-center py-16 text-slate-400">로딩 중...</div>
-      ) : filtered.length === 0 ? (
+      ) : users.length === 0 ? (
         <div className="text-center py-16 text-slate-400">검색 결과가 없습니다.</div>
       ) : (
-        <div className="space-y-2">
-          {filtered.map((user) => {
+        <>
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <p className="text-xs text-slate-400">{total}명</p>
+            <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+          </div>
+          <div className="space-y-2">
+          {users.map((user) => {
             const outstanding = -user.depositAmount;
             const isOpen      = openId === user.id;
             const data        = cache[user.id];
@@ -401,7 +428,11 @@ export default function AdminTransactionsPage() {
               </div>
             );
           })}
-        </div>
+          </div>
+          <div className="mt-4">
+            <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+          </div>
+        </>
       )}
     </div>
   );

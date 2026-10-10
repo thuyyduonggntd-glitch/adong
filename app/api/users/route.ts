@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
   } as const;
 
   // Paginated users + total count + deposit sum — all in parallel
-  const [users, total, depositAgg] = await Promise.all([
+  const [users, total, depositAgg, misuAgg] = await Promise.all([
     prisma.user.findMany({
       where: userWhere,
       select: USER_SELECT,
@@ -54,6 +54,10 @@ export async function GET(req: NextRequest) {
     prisma.user.count({ where: userWhere }),
     prisma.user.aggregate({
       where: { ...userWhere, role: 'USER' },
+      _sum: { depositAmount: true },
+    }),
+    prisma.user.aggregate({
+      where: { ...userWhere, role: 'USER', depositAmount: { lt: 0 } },
       _sum: { depositAmount: true },
     }),
   ]);
@@ -81,5 +85,6 @@ export async function GET(req: NextRequest) {
     total,
     totalSales:   Number(totalSalesAgg._sum?.totalAmount ?? 0),
     totalDeposit: Number(depositAgg._sum?.depositAmount ?? 0),
+    totalMisu:    -Number(misuAgg._sum?.depositAmount ?? 0), // sum of overdue: negate because depositAmount is negative
   });
 }

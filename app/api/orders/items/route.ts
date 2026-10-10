@@ -71,9 +71,26 @@ export async function PATCH(req: NextRequest) {
     if (!isAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const now = new Date();
     const adminId = (session.user as any)?.id as string;
-    const batch = await prisma.orderBatch.create({
-      data: { adminId, itemCount: itemIds.length, createdAt: now },
+
+    // 1시간 이내에 같은 admin이 생성한 batch가 있으면 재사용 (1시간 초과 시 새 차수)
+    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+    const existingBatch = await prisma.orderBatch.findFirst({
+      where: { adminId, createdAt: { gte: oneHourAgo } },
+      orderBy: { createdAt: 'desc' },
     });
+
+    let batch;
+    if (existingBatch) {
+      batch = await prisma.orderBatch.update({
+        where: { id: existingBatch.id },
+        data: { itemCount: existingBatch.itemCount + itemIds.length },
+      });
+    } else {
+      batch = await prisma.orderBatch.create({
+        data: { adminId, itemCount: itemIds.length, createdAt: now },
+      });
+    }
+
     await prisma.orderItem.updateMany({
       where: { id: { in: itemIds } },
       data: { confirmedAt: now, orderBatchId: batch.id },
@@ -83,7 +100,7 @@ export async function PATCH(req: NextRequest) {
     for (const orderId of confirmedOrderIds) {
       await prisma.order.update({ where: { id: orderId }, data: { status: 'CONFIRMED' } });
     }
-    return NextResponse.json({ ok: true, count: itemIds.length, batchId: batch.id });
+    return NextResponse.json({ ok: true, count: itemIds.length, batchId: batch.id, reused: !!existingBatch });
   }
 
   /* ── 품절 처리 (admin) — 다른 상태 먼저 초기화 + 해당 색상·사이즈를 품절로 표시 ── */

@@ -103,11 +103,6 @@ export default function LoginContent() {
             <Link href="/register" className="text-primary-600 font-medium hover:underline">{t('login.registerLink')}</Link>
           </p>
 
-          <div className="mt-4 p-3 bg-slate-50 rounded-lg text-xs text-slate-400 space-y-1">
-            <p>{t('login.testAccountLabel')}</p>
-            <p>{t('login.testAdminLabel')}: admin@kkumbb.com / admin1234</p>
-            <p>{t('login.testUserLabel')}: kim@test.com / user1234</p>
-          </div>
         </div>
       </div>
     </div>

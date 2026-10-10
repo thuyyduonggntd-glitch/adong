@@ -1,4 +1,4 @@
-import { PrismaClient, Role, OrderStatus, TransactionType } from '@prisma/client';
+import { PrismaClient, Role } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -24,33 +24,6 @@ async function main() {
       name: '관리자',
       phone: '010-0000-0000',
       role: Role.ADMIN,
-    },
-  });
-
-  // 일반 회원
-  const userPassword = await bcrypt.hash('user1234', 10);
-  const user1 = await prisma.user.upsert({
-    where: { email: 'kim@test.com' },
-    update: {},
-    create: {
-      email: 'kim@test.com',
-      password: userPassword,
-      name: '김민준',
-      phone: '010-1234-5678',
-      address: '서울시 강남구 테헤란로 123',
-      depositAmount: 150000,
-    },
-  });
-  const user2 = await prisma.user.upsert({
-    where: { email: 'lee@test.com' },
-    update: {},
-    create: {
-      email: 'lee@test.com',
-      password: userPassword,
-      name: '이서연',
-      phone: '010-9876-5432',
-      address: '서울시 마포구 홍대로 45',
-      depositAmount: 80000,
     },
   });
 
@@ -124,93 +97,6 @@ async function main() {
     }),
   ]);
 
-  // 주문 샘플
-  await prisma.order.create({
-    data: {
-      userId: user1.id,
-      totalAmount: 80000,
-      status: OrderStatus.DELIVERED,
-      shippingName: '김민준',
-      shippingPhone: '010-1234-5678',
-      shippingAddress: '서울시 강남구 테헤란로 123',
-      note: '계좌이체 완료했습니다.',
-      items: {
-        create: [
-          { productId: products[0].id, quantity: 1, price: 35000, size: '60', color: '민트' },
-          { productId: products[2].id, quantity: 1, price: 45000, size: '100', color: '블루' },
-        ],
-      },
-    },
-  });
-
-  await prisma.order.create({
-    data: {
-      userId: user1.id,
-      totalAmount: 48000,
-      status: OrderStatus.CANCELLED,
-      shippingName: '김민준',
-      shippingPhone: '010-1234-5678',
-      shippingAddress: '서울시 강남구 테헤란로 123',
-      items: {
-        create: [
-          { productId: products[3].id, quantity: 1, price: 48000, size: '130', color: '네이비' },
-        ],
-      },
-    },
-  });
-
-  await prisma.order.create({
-    data: {
-      userId: user2.id,
-      totalAmount: 89000,
-      status: OrderStatus.SHIPPING,
-      shippingName: '이서연',
-      shippingPhone: '010-9876-5432',
-      shippingAddress: '서울시 마포구 홍대로 45',
-      items: {
-        create: [
-          { productId: products[4].id, quantity: 1, price: 89000, size: 'FREE', color: '민트' },
-        ],
-      },
-    },
-  });
-
-  // 관심상품
-  await prisma.wishlist.createMany({
-    data: [
-      { userId: user1.id, productId: products[1].id },
-      { userId: user1.id, productId: products[4].id },
-      { userId: user2.id, productId: products[0].id },
-    ],
-    skipDuplicates: true,
-  });
-
-  // 리뷰
-  await prisma.review.create({
-    data: {
-      userId: user1.id,
-      productId: products[0].id,
-      rating: 5,
-      content: '정말 부드럽고 아기가 잘 입어요! 다음에도 구매할 예정입니다.',
-    },
-  });
-
-  // 입출금 내역 샘플
-  await prisma.transaction.createMany({
-    data: [
-      { userId: user1.id, type: TransactionType.DEPOSIT,    amount: 80000,  description: '주문 #1 입금',     date: new Date('2024-01-15') },
-      { userId: user1.id, type: TransactionType.DEPOSIT,    amount: 70000,  description: '2월 구매 입금',    date: new Date('2024-02-03') },
-      { userId: user1.id, type: TransactionType.WITHDRAWAL, amount: 30000,  description: '부분 환불',         date: new Date('2024-02-10') },
-      { userId: user2.id, type: TransactionType.DEPOSIT,    amount: 89000,  description: '선물세트 입금',    date: new Date('2024-01-20') },
-      { userId: user2.id, type: TransactionType.DEPOSIT,    amount: 50000,  description: '추가 주문 입금',   date: new Date('2024-03-05') },
-    ],
-    skipDuplicates: false,
-  });
-
-  // depositAmount 동기화
-  await prisma.user.update({ where: { id: user1.id }, data: { depositAmount: 120000 } });
-  await prisma.user.update({ where: { id: user2.id }, data: { depositAmount: 139000 } });
-
   // 취소 정책 초기화
   const existing = await prisma.cancelPolicy.findFirst();
   if (!existing) {
@@ -218,9 +104,7 @@ async function main() {
   }
 
   console.log('시드 데이터 생성 완료!');
-  console.log('어드민: admin@kkumbb.com / admin1234');
-  console.log('사용자: kim@test.com / user1234');
-  console.log('사용자: lee@test.com / user1234');
+  console.log('어드민: admin@kkumbb.com');
 }
 
 main().catch(console.error).finally(() => prisma.$disconnect());

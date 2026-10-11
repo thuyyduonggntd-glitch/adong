@@ -11,11 +11,18 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function time<T>(label: string, fn: () => Promise<T>): Promise<T> {
-  const start = Date.now();
-  const result = await fn();
-  const ms = Date.now() - start;
-  const mark = ms < 200 ? '✅' : ms < 600 ? '⚠️ ' : '❌';
-  console.log(`  ${mark} ${label.padEnd(45)} ${String(ms).padStart(5)}ms`);
+  const runs: number[] = [];
+  let result!: T;
+  for (let i = 0; i < 3; i++) {
+    const start = Date.now();
+    result = await fn();
+    runs.push(Date.now() - start);
+  }
+  const warm = Math.round((runs[1] + runs[2]) / 2);
+  const mark = warm < 200 ? '✅' : warm < 500 ? '⚠️ ' : '❌';
+  console.log(
+    `  ${mark} ${label.padEnd(44)} cold=${String(runs[0]).padStart(4)}ms  warm=${String(runs[1]).padStart(4)}/${String(runs[2]).padStart(4)}ms  avg=${String(warm).padStart(4)}ms`,
+  );
   return result;
 }
 
@@ -152,15 +159,27 @@ async function main() {
     }),
   );
 
-  /* ── 대시보드 ── */
-  console.log('\n📊 대시보드:');
-  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  await time('대시보드 집계 (사용자/상품/주문/거래)', () =>
+  /* ── 대시보드 (실제 /api/dashboard/stats 쿼리) ── */
+  console.log('\n📊 대시보드 (/api/dashboard/stats 실제 쿼리):');
+  await time('order.count (전체)', () => prisma.order.count());
+  await time('order.count (PENDING)', () => prisma.order.count({ where: { status: 'PENDING' } }));
+  await time('order.aggregate totalAmount', () =>
+    prisma.order.aggregate({ _sum: { totalAmount: true }, where: { status: { in: ['CONFIRMED', 'SHIPPING', 'DELIVERED'] } } }),
+  );
+  await time('user.count (USER role)', () => prisma.user.count({ where: { role: 'USER' } }));
+  await time('order.findMany recentOrders top10', () =>
+    prisma.order.findMany({
+      take: 10, orderBy: { createdAt: 'desc' },
+      select: { id: true, totalAmount: true, createdAt: true, status: true, user: { select: { name: true } }, items: { select: { product: { select: { name: true } } }, take: 1 } },
+    }),
+  );
+  await time('대시보드 전체 (5 쿼리 병렬)', () =>
     Promise.all([
-      prisma.user.count(),
-      prisma.product.count({ where: { isActive: true } }),
-      prisma.order.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
-      prisma.transaction.count({ where: { date: { gte: thirtyDaysAgo } } }),
+      prisma.order.count(),
+      prisma.order.count({ where: { status: 'PENDING' } }),
+      prisma.order.aggregate({ _sum: { totalAmount: true }, where: { status: { in: ['CONFIRMED', 'SHIPPING', 'DELIVERED'] } } }),
+      prisma.user.count({ where: { role: 'USER' } }),
+      prisma.order.findMany({ take: 10, orderBy: { createdAt: 'desc' }, select: { id: true, totalAmount: true, createdAt: true, status: true } }),
     ]),
   );
 

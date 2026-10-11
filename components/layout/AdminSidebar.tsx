@@ -13,7 +13,7 @@ type MenuItem = {
 
 type MenuGroup = {
   label: string;
-  zone: 'admin' | 'goods' | 'orders' | 'settings';
+  zone: 'admin' | 'goods' | 'orders' | 'notice-faq' | 'settings';
   items: MenuItem[];
 };
 
@@ -34,7 +34,6 @@ const MENU_GROUPS: MenuGroup[] = [
       { href: '/admin/cancelled', label: '취소 상품', icon: 'M6 18L18 6M6 6l12 12', badge: 'cancelCount' },
       { href: '/admin/shipping', label: '배송 관리', icon: 'M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0zM13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0' },
       { href: '/admin/qna', label: '문의', icon: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z', badge: 'qnaCount' },
-      { href: '/admin/users', label: '회원 관리', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z', badge: 'newUserCount' },
     ],
   },
   {
@@ -46,11 +45,18 @@ const MENU_GROUPS: MenuGroup[] = [
     ],
   },
   {
-    label: '설정',
-    zone: 'settings',
+    label: '공지·FAQ',
+    zone: 'notice-faq',
     items: [
       { href: '/admin/notices', label: '공지 알림', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
       { href: '/admin/faqs', label: 'FAQ 관리', icon: 'M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
+    ],
+  },
+  {
+    label: '설정',
+    zone: 'settings',
+    items: [
+      { href: '/admin/users', label: '회원 관리', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z', badge: 'newUserCount' },
       { href: '/admin/accounts', label: '관리자 계정', icon: 'M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
     ],
   },
@@ -60,6 +66,7 @@ const GROUP_ZONE_LABELS: Record<string, string> = {
   admin: '관리',
   orders: '주문',
   goods: '상품',
+  'notice-faq': '공지·FAQ',
   settings: '설정',
 };
 
@@ -109,7 +116,9 @@ export default function AdminSidebar() {
   const visibleGroups = MENU_GROUPS
     .map((group) => {
       if (!isSubAdmin) return group; // ADMIN sees all
+      // SUB_ADMIN: hide admin-only groups
       if (group.zone === 'admin' || group.zone === 'settings') return null;
+      // SUB_ADMIN: show zone-based groups only if they have the zone
       if (!adminZones.includes(group.zone)) return null;
       return group;
     })
@@ -143,7 +152,7 @@ export default function AdminSidebar() {
           <div>
             <Link href={homeHref} className="text-xl font-bold text-primary-200">꿈비샵 관리자</Link>
             <p className="text-primary-400 text-xs mt-1">
-              {isAdmin ? 'Admin' : `담당: ${adminZones.map((z) => z === 'goods' ? '상품' : '주문').join(' · ')}`}
+              {isAdmin ? 'Admin' : `담당: ${adminZones.map((z) => z === 'goods' ? '상품' : z === 'orders' ? '주문' : '공지·FAQ').join(' · ')}`}
             </p>
           </div>
           <button onClick={() => setOpen(false)} aria-label="메뉴 닫기" className="md:hidden p-1 text-primary-300 hover:text-white">

@@ -2,13 +2,13 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { hasOrdersAccess } from '@/lib/adminAccess';
+import { isAdmin } from '@/lib/adminAccess';
 
 // 아이디별 현황 (최근 60일) — 회원 관리 페이지용
 export async function GET() {
   const session = await getServerSession(authOptions);
-  if (!session || !hasOrdersAccess((session.user as any)?.role, (session.user as any)?.adminZones))
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!session || !isAdmin((session.user as any)?.role))
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
   const cutoff = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
 

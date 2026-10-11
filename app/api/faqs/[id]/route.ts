@@ -3,14 +3,12 @@ import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { translateAndSaveFaq } from '@/lib/translate';
-
-// FAQ 관리는 총괄관리자(ADMIN)만 — 부관리자(SUB_ADMIN)는 접근 불가
-const isFullAdmin = (role?: string | null) => role === 'ADMIN';
+import { hasNoticeFaqAccess } from '@/lib/adminAccess';
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
-  if (!session || !isFullAdmin((session.user as any)?.role))
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!session || !hasNoticeFaqAccess((session.user as any)?.role, (session.user as any)?.adminZones))
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
   const { category, question, answer, order, isActive } = await req.json();
   const data: any = {};
@@ -33,8 +31,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
-  if (!session || !isFullAdmin((session.user as any)?.role))
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!session || !hasNoticeFaqAccess((session.user as any)?.role, (session.user as any)?.adminZones))
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
   await prisma.faq.delete({ where: { id: params.id } });
   return NextResponse.json({ ok: true });

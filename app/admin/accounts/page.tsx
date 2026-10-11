@@ -13,8 +13,9 @@ type Account = {
 };
 
 const ZONE_LABELS: Record<string, string> = {
-  orders: '주문 (주문 관리·배송·문의·회원)',
-  goods: '상품 (상품 관리·브랜드)',
+  orders:       '주문 (주문 관리·취소·배송·문의)',
+  goods:        '상품 (상품 관리·브랜드)',
+  'notice-faq': '공지·FAQ (공지 알림·FAQ 관리)',
 };
 
 export default function AccountsPage() {

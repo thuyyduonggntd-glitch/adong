@@ -16,6 +16,7 @@ async function getTopBrandsUncached() {
     FROM "OrderItem" oi
     JOIN "Product" p ON oi."productId" = p.id
     WHERE p.brand IS NOT NULL AND p.brand <> ''
+      AND (p.remark IS NULL OR p.remark != '__TEST_DATA__')
     GROUP BY p.brand
     ORDER BY cnt DESC
     LIMIT 10

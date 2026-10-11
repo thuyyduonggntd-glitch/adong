@@ -2065,16 +2065,13 @@ export default function AdminOrdersPage() {
   const [confirmedTotal, setConfirmedTotal]             = useState(0);
   const [confirmedListLoading, setConfirmedListLoading] = useState(false);
 
-  // 전체입고: lazy load
+  // 전체입고: 필터 기반 lazy load (필터 없으면 데이터 미로드)
   const [inboundHistoryLoaded, setInboundHistoryLoaded]     = useState(false);
   const [inboundHistoryLoading, setInboundHistoryLoading]   = useState(false);
   const [inboundAllArrivedItems, setInboundAllArrivedItems] = useState<ArrivedItem[]>([]);
   const [inboundAllInbounds, setInboundAllInbounds]         = useState<InboundRec[]>([]);
-  // 더 오래된 데이터 로드를 위한 dateFrom 확장
-  const [inboundFromDate, setInboundFromDate] = useState(() => {
-    const d = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
-    return d.toISOString().split('T')[0];
-  });
+  const [inboundDateFrom, setInboundDateFrom] = useState('');
+  const [inboundDateTo, setInboundDateTo]     = useState('');
 
   const [todayInbounds, setTodayInbounds]     = useState<InboundRec[]>([]);
   const [todayArrivedItems, setTodayArrivedItems]           = useState<ArrivedItem[]>([]);
@@ -2087,7 +2084,6 @@ export default function AdminOrdersPage() {
   const [dailyArrivedPage, setDailyArrivedPage] = useState(1);
   const [inboundAllPage, setInboundAllPage]     = useState(1);
   const [ousuPage, setOusuPage]                 = useState(1);
-  const [inboundDateFilter, setInboundDateFilter]   = useState('');
   const [inboundBrandFilter, setInboundBrandFilter] = useState('');
   const [inboundIdFilter, setInboundIdFilter]       = useState('');
   const [cancelPolicy, setCancelPolicy] = useState({
@@ -2148,11 +2144,13 @@ export default function AdminOrdersPage() {
     } finally { setConfirmedListLoading(false); }
   }, []);
 
-  const fetchInboundHistory = useCallback(async (fromDate: string, brand: string) => {
+  const fetchInboundHistory = useCallback(async (dateFrom: string, dateTo: string, brand: string) => {
     setInboundHistoryLoading(true);
     try {
-      const params = new URLSearchParams({ dateFrom: fromDate });
-      if (brand) params.set('brand', brand);
+      const params = new URLSearchParams();
+      if (dateFrom) params.set('dateFrom', dateFrom);
+      if (dateTo)   params.set('dateTo', dateTo);
+      if (brand)    params.set('brand', brand);
       const d = await fetch(`/api/admin/inbound-history?${params}`).then((r) => r.json());
       setInboundAllArrivedItems(Array.isArray(d.arrivedItems) ? d.arrivedItems : []);
       setInboundAllInbounds(Array.isArray(d.inbounds) ? d.inbounds : []);
@@ -2196,49 +2194,31 @@ export default function AdminOrdersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, confirmedViewMode, confirmedPage, debouncedSearch, refreshVersion]);
 
-  // 전체입고 탭 진입 시 최초 1회 로드
-  useEffect(() => {
-    if (loading || tab !== '전체입고' || inboundHistoryLoaded) return;
-    fetchInboundHistory(inboundFromDate, inboundBrandFilter);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, tab, inboundHistoryLoaded]);
-
   const totalPendingPages   = Math.max(1, Math.ceil(pendingTotal   / QUEUE_PAGE_SIZE));
   const totalConfirmedPages = Math.max(1, Math.ceil(confirmedTotal / QUEUE_PAGE_SIZE));
 
-  useEffect(() => { setInboundAllPage(1); }, [inboundDateFilter, inboundBrandFilter, inboundIdFilter]);
+  useEffect(() => { setInboundAllPage(1); }, [inboundDateFrom, inboundDateTo, inboundBrandFilter, inboundIdFilter]);
 
-  // 전체입고 필터 변경 시 서버 재조회
+  // 전체입고: 필터 변경 시 데이터 로드 (필터 없으면 초기화)
   const inboundBrandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (!inboundHistoryLoaded) return;
+    if (!inboundDateFrom && !inboundBrandFilter) {
+      setInboundAllArrivedItems([]);
+      setInboundAllInbounds([]);
+      setInboundHistoryLoaded(false);
+      return;
+    }
     clearTimeout(inboundBrandTimerRef.current!);
     inboundBrandTimerRef.current = setTimeout(() => {
-      fetchInboundHistory(inboundFromDate, inboundBrandFilter);
+      fetchInboundHistory(inboundDateFrom, inboundDateTo, inboundBrandFilter);
     }, 300);
     return () => clearTimeout(inboundBrandTimerRef.current!);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inboundFromDate, inboundBrandFilter]);
+  }, [inboundDateFrom, inboundDateTo, inboundBrandFilter, refreshVersion]);
 
-  // 전체입고: lazy 데이터에 날짜 필터 적용 (브랜드는 이미 API에서 필터됨)
-  const filteredInbounds = useMemo(() => {
-    if (!inboundDateFilter) return inboundAllInbounds;
-    return inboundAllInbounds.filter((ib) => {
-      const d = new Date(ib.arrivedAt); d.setHours(0, 0, 0, 0);
-      const f = new Date(inboundDateFilter); f.setHours(0, 0, 0, 0);
-      return d.getTime() === f.getTime();
-    });
-  }, [inboundAllInbounds, inboundDateFilter]);
-
-  const filteredAllArrived = useMemo(() => {
-    if (!inboundDateFilter) return inboundAllArrivedItems;
-    return inboundAllArrivedItems.filter((it) => {
-      const start = new Date(inboundDateFilter); start.setHours(0, 0, 0, 0);
-      const end   = new Date(inboundDateFilter); end.setHours(23, 59, 59, 999);
-      const t     = new Date(it.arrivedAt).getTime();
-      return t >= start.getTime() && t <= end.getTime();
-    });
-  }, [inboundAllArrivedItems, inboundDateFilter]);
+  // 날짜·브랜드 필터는 API에서 처리, 여기서는 pass-through
+  const filteredInbounds   = inboundAllInbounds;
+  const filteredAllArrived = inboundAllArrivedItems;
 
   /* ── 일별입고 인쇄용 통합 행 (주문 입고 + 공급업체 입고) ── */
   const todayInboundRows: DailyRow[] = useMemo(() => [
@@ -2830,29 +2810,20 @@ export default function AdminOrdersPage() {
           {/* ── 전체입고 ── */}
           {tab === '전체입고' && (
             <div>
-              <div className="flex items-center gap-3 mb-4 flex-wrap">
-                <input type="date" className="input text-sm w-44" value={inboundDateFilter} onChange={(e) => setInboundDateFilter(e.target.value)} />
-                <input className="input text-sm max-w-xs" placeholder="브랜드 검색..." value={inboundBrandFilter} onChange={(e) => setInboundBrandFilter(e.target.value)} />
-                {(inboundDateFilter || inboundBrandFilter) && (
-                  <button onClick={() => { setInboundDateFilter(''); setInboundBrandFilter(''); }} className="text-xs text-slate-500 hover:text-slate-700">초기화</button>
+              <div className="flex items-center gap-2 mb-4 flex-wrap">
+                <input type="date" className="input text-sm w-40" value={inboundDateFrom} onChange={(e) => setInboundDateFrom(e.target.value)} />
+                <span className="text-xs text-slate-400">~</span>
+                <input type="date" className="input text-sm w-40" value={inboundDateTo} onChange={(e) => setInboundDateTo(e.target.value)} />
+                <input className="input text-sm w-36" placeholder="브랜드..." value={inboundBrandFilter} onChange={(e) => setInboundBrandFilter(e.target.value)} />
+                {(inboundDateFrom || inboundDateTo || inboundBrandFilter) && (
+                  <button onClick={() => { setInboundDateFrom(''); setInboundDateTo(''); setInboundBrandFilter(''); setInboundIdFilter(''); }} className="text-xs text-slate-500 hover:text-slate-700">초기화</button>
                 )}
-                <span className="text-xs text-slate-400">
-                  {inboundFromDate} ~ 오늘
-                </span>
-                <button
-                  onClick={() => {
-                    const prev = new Date(inboundFromDate);
-                    prev.setDate(prev.getDate() - 90);
-                    setInboundFromDate(prev.toISOString().split('T')[0]);
-                  }}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors"
-                >
-                  이전 90일 더 보기
-                </button>
               </div>
 
               {inboundHistoryLoading ? (
                 <div className="text-center py-16 text-slate-400 text-sm">로딩 중...</div>
+              ) : (!inboundDateFrom && !inboundBrandFilter) ? (
+                <div className="text-center py-16 text-slate-400 text-sm">날짜 또는 브랜드/아이디를 선택하면 입고 내역이 표시됩니다.</div>
               ) : (() => {
                 const supplierRows = filteredInbounds.flatMap((ib) =>
                   ib.items.map((item) => ({
@@ -2906,11 +2877,12 @@ export default function AdminOrdersPage() {
 
                 const handleInboundPrint = () => {
                   if (allRows.length === 0) return;
-                  printInboundRows(allRows, `전체입고${inboundDateFilter ? ` - ${inboundDateFilter}` : ''}`);
+                  const label = [inboundDateFrom, inboundDateTo].filter(Boolean).join(' ~ ') || inboundBrandFilter;
+                  printInboundRows(allRows, `전체입고${label ? ` - ${label}` : ''}`);
                 };
 
                 if (allRowsRaw.length === 0) return (
-                  <div className="text-center py-12 text-slate-400 text-sm">해당 날짜의 입고 내역이 없습니다.</div>
+                  <div className="text-center py-12 text-slate-400 text-sm">해당 조건의 입고 내역이 없습니다.</div>
                 );
 
                 return (

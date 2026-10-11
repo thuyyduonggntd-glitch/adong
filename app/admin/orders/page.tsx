@@ -907,22 +907,79 @@ function MallOrderView({ rows, brandMallMap }: { rows: FlatRow[]; brandMallMap: 
   );
 }
 
-// ── 퍼지 매칭 헬퍼 (OCR 텍스트 ↔ 상품 정보, 클라이언트 사이드) ─────────────────
-function tokenize(s: string): string[] {
-  return s.toLowerCase().replace(/[^\w가-힣]/g, ' ').split(/\s+/).filter((t) => t.length > 0);
+// ── OCR 줄별 매칭 헬퍼 ───────────────────────────────────────────────────────
+
+/** 괄호 안 내용, 공백, 특수문자 제거 후 소문자 */
+function normStr(s: string): string {
+  return s.replace(/\([^)]*\)/g, '').replace(/[\s\-_·]/g, '').toLowerCase();
 }
-function tokenOverlapScore(query: string, target: string): number {
-  const qt = tokenize(query); const tt = new Set(tokenize(target));
-  if (qt.length === 0 || tt.size === 0) return 0;
-  const matched = qt.filter((t) => tt.has(t) || Array.from(tt).some((u) => u.includes(t) || t.includes(u)));
-  return matched.length / qt.length;
+
+/** 문자 바이그램 유사도 (0~1) */
+function bigramSim(a: string, b: string): number {
+  if (!a || !b) return a === b ? 1 : 0;
+  if (a === b) return 1;
+  if (a.includes(b) || b.includes(a)) return 0.9;
+  const bg = (s: string) => new Set(Array.from({ length: s.length - 1 }, (_, i) => s.slice(i, i + 2)));
+  const ba = bg(a); const bb = bg(b);
+  const inter = Array.from(ba).filter((g) => bb.has(g)).length;
+  return ba.size + bb.size === 0 ? 0 : (2 * inter) / (ba.size + bb.size);
 }
-function fuzzyMatchItem(ocrText: string, item: ConfirmedItem): boolean {
-  const nameScore  = tokenOverlapScore(item.productName, ocrText);
-  const colorScore = item.color ? tokenOverlapScore(item.color, ocrText) : 0;
-  const sizeScore  = item.size  ? tokenOverlapScore(item.size,  ocrText) : 0;
-  // 상품명 토큰 50% 이상 OR (상품명 토큰 일부 + 컬러 or 사이즈 매칭)
-  return nameScore >= 0.5 || (nameScore >= 0.25 && (colorScore > 0 || sizeScore > 0));
+
+/** 영수증 한 줄 파싱: "상품명 / 컬러 / 사이즈  N장" */
+function parseInvoiceLine(line: string): { name: string; color: string; size: string; qty: number } | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  const qtyM = trimmed.match(/(\d+)\s*장\s*$/);
+  if (!qtyM) return null;
+  const qty = parseInt(qtyM[1], 10);
+  if (!qty) return null;
+  const rest = trimmed.slice(0, trimmed.lastIndexOf(qtyM[0])).trim();
+  const parts = rest.split(/\s*\/\s*/);
+  if (parts.length < 3) return null;
+  return { name: parts[0].trim(), color: parts[1].trim(), size: parts[2].trim(), qty };
+}
+
+type ItemGroup = {
+  key: string;
+  productName: string; color: string; size: string;
+  items: ConfirmedItem[];
+  totalQty: number;
+};
+
+type MatchLine = {
+  lineText: string;
+  name: string; color: string; size: string; requestedQty: number;
+  groupKey: string | null;
+  availableQty: number;
+  selectedQty: number;
+  status: 'ok' | 'partial' | 'notfound';
+};
+
+function buildGroups(items: ConfirmedItem[]): ItemGroup[] {
+  const map = new Map<string, ItemGroup>();
+  for (const it of items) {
+    const key = `${it.productId}::${it.color}::${it.size}`;
+    if (!map.has(key)) map.set(key, { key, productName: it.productName, color: it.color, size: it.size, items: [], totalQty: 0 });
+    const g = map.get(key)!;
+    g.items.push(it);
+    g.totalQty += it.quantity;
+  }
+  return Array.from(map.values());
+}
+
+function matchLineToGroup(parsed: { name: string; color: string; size: string }, groups: ItemGroup[]): ItemGroup | null {
+  const nn = normStr(parsed.name);
+  const nc = normStr(parsed.color);
+  const ns = normStr(parsed.size);
+  let best: { g: ItemGroup; score: number } | null = null;
+  for (const g of groups) {
+    const colorOk = normStr(g.color).includes(nc) || nc.includes(normStr(g.color));
+    const sizeOk  = normStr(g.size).includes(ns)  || ns.includes(normStr(g.size));
+    if (!colorOk || !sizeOk) continue;
+    const nameSim = bigramSim(nn, normStr(g.productName));
+    if (nameSim >= 0.45 && (!best || nameSim > best.score)) best = { g, score: nameSim };
+  }
+  return best?.g ?? null;
 }
 
 // ── InvoiceReceipt 이력 타입 ─────────────────────────────────────────────────
@@ -943,21 +1000,19 @@ function InvoiceModal({
   onClose: () => void;
   onArrived: (itemIds: string[]) => Promise<void>;
 }) {
-  const [modalTab, setModalTab] = useState<'대조' | '이력'>('대조');
-
-  // 데이터
-  const [items, setItems]     = useState<ConfirmedItem[]>([]);
-  const [history, setHistory] = useState<InvoiceReceiptHistory[]>([]);
+  const [modalTab, setModalTab]   = useState<'대조' | '이력'>('대조');
+  const [items, setItems]         = useState<ConfirmedItem[]>([]);
+  const [history, setHistory]     = useState<InvoiceReceiptHistory[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
 
-  // 폼
-  const [totalQtyInput, setTotalQtyInput]     = useState('');
-  const [receiptNumber, setReceiptNumber]     = useState('');
-  const [ocrText, setOcrText]                 = useState('');
-  const [selectedIds, setSelectedIds]         = useState<Set<string>>(new Set());
-  const [saving, setSaving]                   = useState(false);
-  const [error, setError]                     = useState('');
-  const [matchDone, setMatchDone]             = useState(false);
+  const [totalQtyInput, setTotalQtyInput] = useState('');
+  const [receiptNumber, setReceiptNumber] = useState('');
+  const [ocrText, setOcrText]             = useState('');
+  const [selectedIds, setSelectedIds]     = useState<Set<string>>(new Set());
+  const [matchResults, setMatchResults]   = useState<MatchLine[] | null>(null);
+  const [openGroups, setOpenGroups]       = useState<Set<string>>(new Set());
+  const [saving, setSaving]               = useState(false);
+  const [saveError, setSaveError]         = useState('');
 
   useEffect(() => {
     setDataLoading(true);
@@ -966,66 +1021,87 @@ function InvoiceModal({
       fetch(`/api/admin/confirmed-items?${params}`).then((r) => r.json()),
       fetch(`/api/admin/invoice-receipts?brand=${encodeURIComponent(brand)}`).then((r) => r.json()),
     ]).then(([its, hist]) => {
-      const sortedItems: ConfirmedItem[] = Array.isArray(its)
+      const sorted: ConfirmedItem[] = Array.isArray(its)
         ? [...its].sort((a, b) => (a.confirmedAt ?? '').localeCompare(b.confirmedAt ?? ''))
         : [];
-      setItems(sortedItems);
+      setItems(sorted);
       setHistory(Array.isArray(hist) ? hist : []);
       setDataLoading(false);
     });
   }, [brand, batchFilter]);
 
-  const totalQty = parseInt(totalQtyInput, 10);
-  const checkedItems = items.filter((it) => selectedIds.has(it.itemId));
-  const checkedQty   = checkedItems.reduce((s, it) => s + it.quantity, 0);
-  const qtyValid     = !isNaN(totalQty) && totalQty > 0;
-  const qtyMismatch  = qtyValid && checkedQty !== totalQty;
+  const groups = useMemo(() => buildGroups(items), [items]);
 
-  const toggleItem = (itemId: string) => {
+  const totalQty    = parseInt(totalQtyInput, 10);
+  const qtyValid    = !isNaN(totalQty) && totalQty > 0;
+  const checkedQty  = items.filter((it) => selectedIds.has(it.itemId)).reduce((s, it) => s + it.quantity, 0);
+  const qtyMismatch = qtyValid && checkedQty !== totalQty;
+
+  const toggleItem = (itemId: string) =>
+    setSelectedIds((prev) => { const n = new Set(prev); n.has(itemId) ? n.delete(itemId) : n.add(itemId); return n; });
+
+  const toggleGroup = (g: ItemGroup) => {
+    const allSel = g.items.every((it) => selectedIds.has(it.itemId));
     setSelectedIds((prev) => {
-      const next = new Set(prev);
-      next.has(itemId) ? next.delete(itemId) : next.add(itemId);
-      return next;
+      const n = new Set(prev);
+      g.items.forEach((it) => allSel ? n.delete(it.itemId) : n.add(it.itemId));
+      return n;
     });
   };
 
+  // 줄별 매칭: 각 줄을 파싱 → 그룹 찾기 → 오래된 순으로 qty만큼 선택
   const handleAutoMatch = () => {
-    if (!ocrText.trim()) return;
-    const matched = new Set<string>();
-    items.forEach((it) => {
-      if (fuzzyMatchItem(ocrText, it)) matched.add(it.itemId);
-    });
-    setSelectedIds(matched);
-    setMatchDone(true);
-  };
+    const lines = ocrText.split('\n').map((l) => l.trim()).filter(Boolean);
+    const newSelected = new Set<string>();
+    const results: MatchLine[] = [];
 
-  // 총 수량에 맞게 오래된 순으로 자동 조정
-  const handleAutoAdjust = () => {
-    if (!qtyValid) return;
-    let remaining = totalQty;
-    const next = new Set<string>();
-    for (const it of items) { // 이미 confirmedAt 오름차순 정렬됨
-      if (remaining <= 0) break;
-      next.add(it.itemId);
-      remaining -= it.quantity;
+    for (const line of lines) {
+      const parsed = parseInvoiceLine(line);
+      if (!parsed) continue; // 수량 없는 줄은 건너뜀
+
+      const grp = matchLineToGroup(parsed, groups);
+      if (!grp) {
+        results.push({ lineText: line, name: parsed.name, color: parsed.color, size: parsed.size,
+          requestedQty: parsed.qty, groupKey: null, availableQty: 0, selectedQty: 0, status: 'notfound' });
+        continue;
+      }
+
+      // 이미 다른 줄에서 선택된 것 제외한 잔여 items
+      const remaining = grp.items.filter((it) => !newSelected.has(it.itemId));
+      const availableQty = remaining.reduce((s, it) => s + it.quantity, 0);
+
+      let toSelect = parsed.qty;
+      let selectedQty = 0;
+      for (const it of remaining) {
+        if (toSelect <= 0) break;
+        newSelected.add(it.itemId);
+        selectedQty += it.quantity;
+        toSelect -= it.quantity;
+      }
+
+      results.push({
+        lineText: line, name: parsed.name, color: parsed.color, size: parsed.size,
+        requestedQty: parsed.qty, groupKey: grp.key, availableQty,
+        selectedQty,
+        status: selectedQty >= parsed.qty ? 'ok' : (selectedQty > 0 ? 'partial' : 'notfound'),
+      });
     }
-    setSelectedIds(next);
+
+    setSelectedIds(newSelected);
+    setMatchResults(results);
   };
 
   const handleSave = async () => {
-    setError('');
-    if (!qtyValid) { setError('총 수량을 입력해주세요.'); return; }
-    if (selectedIds.size === 0) { setError('입고 처리할 항목을 선택해주세요.'); return; }
-
+    setSaveError('');
+    if (!qtyValid) { setSaveError('총 수량을 입력해주세요.'); return; }
+    if (selectedIds.size === 0) { setSaveError('입고 처리할 항목을 선택해주세요.'); return; }
     setSaving(true);
     try {
       const res = await fetch('/api/admin/invoice-receipts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          brand,
-          totalQty,
-          checkedQty,
+          brand, totalQty, checkedQty,
           receiptNumber: receiptNumber.trim() || null,
           imageUrl: null,
           rawText: ocrText.trim() || null,
@@ -1033,39 +1109,35 @@ function InvoiceModal({
         }),
       });
       const d = await res.json();
-      if (!res.ok) { setError(d.error || '저장에 실패했습니다.'); return; }
+      if (!res.ok) { setSaveError(d.error || '저장에 실패했습니다.'); return; }
       await onArrived(Array.from(selectedIds));
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
-  const fmtDate = (s: string) => {
+  const fmtDt = (s: string) => {
     const d = new Date(s);
     return `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4" onClick={onClose}>
-      <div
-        className="bg-white w-full sm:rounded-2xl sm:max-w-2xl sm:mx-4 shadow-2xl flex flex-col"
-        style={{ maxHeight: '92vh' }}
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="bg-white w-full sm:rounded-2xl sm:max-w-2xl sm:mx-4 shadow-2xl flex flex-col"
+        style={{ maxHeight: '92vh' }} onClick={(e) => e.stopPropagation()}>
+
         {/* 헤더 */}
         <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-100 flex-shrink-0">
           <div>
             <h2 className="text-base font-bold text-slate-800">{brand} 영수증 대조</h2>
-            <p className="text-xs text-slate-400 mt-0.5">확인 대기 {items.length}건 · {items.reduce((s, it) => s + it.quantity, 0)}장</p>
+            <p className="text-xs text-slate-400 mt-0.5">확인 대기 {groups.length}종 · {items.reduce((s, it) => s + it.quantity, 0)}장</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl leading-none w-8 h-8 flex items-center justify-center">×</button>
         </div>
 
         {/* 탭 */}
-        <div className="flex gap-1 px-5 pt-3 pb-0 flex-shrink-0">
+        <div className="flex gap-1 px-5 pt-3 flex-shrink-0 border-b border-slate-100">
           {(['대조', '이력'] as const).map((t) => (
             <button key={t} onClick={() => setModalTab(t)}
-              className={`px-4 py-1.5 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${
+              className={`px-4 py-1.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
                 modalTab === t ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500 hover:text-slate-700'
               }`}>
               {t}{t === '이력' && history.length > 0 && <span className="ml-1 text-xs text-slate-400">({history.length})</span>}
@@ -1073,125 +1145,144 @@ function InvoiceModal({
           ))}
         </div>
 
-        <div className="border-t border-slate-100 flex-shrink-0" />
-
         {/* 바디 */}
         <div className="overflow-y-auto flex-1 min-h-0">
           {dataLoading ? (
             <div className="text-center py-16 text-slate-400 text-sm">로딩 중...</div>
           ) : modalTab === '대조' ? (
             <div className="p-5 space-y-4">
-              {/* 폼 영역 */}
+
+              {/* 폼 */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">총 수량 <span className="text-red-500">*</span></label>
-                  <input
-                    type="number" min="1" placeholder="영수증 총 장수"
+                  <input type="number" min="1" placeholder="영수증 총 장수"
                     value={totalQtyInput} onChange={(e) => setTotalQtyInput(e.target.value)}
-                    className="input w-full text-sm"
-                  />
+                    className="input w-full text-sm" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">영수증 번호 <span className="text-slate-400">(선택)</span></label>
-                  <input
-                    type="text" placeholder="중복 방지용"
+                  <input type="text" placeholder="중복 방지용"
                     value={receiptNumber} onChange={(e) => setReceiptNumber(e.target.value)}
-                    className="input w-full text-sm"
-                  />
+                    className="input w-full text-sm" />
                 </div>
               </div>
 
-              {/* OCR 영역 */}
+              {/* OCR */}
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">영수증 텍스트 붙여넣기 <span className="text-slate-400">(선택, 자동 매칭용)</span></label>
-                <textarea
-                  rows={3} placeholder={`예:\n아기 배냇저고리 핑크 60 2장\n신생아 속싸개 민트 Free 1장`}
-                  value={ocrText} onChange={(e) => { setOcrText(e.target.value); setMatchDone(false); }}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-300"
-                />
-                <div className="flex gap-2 mt-1.5">
-                  <button
-                    onClick={handleAutoMatch}
-                    disabled={!ocrText.trim()}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-primary-600 text-white font-medium disabled:opacity-40 hover:bg-primary-700 transition-colors"
-                  >
-                    자동 매칭
-                  </button>
-                  {matchDone && <span className="text-xs text-green-600 flex items-center gap-1">✓ {selectedIds.size}건 매칭됨</span>}
-                </div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  영수증 텍스트 붙여넣기 <span className="text-slate-400">(선택 — 줄별 "상품명 / 컬러 / 사이즈  N장")</span>
+                </label>
+                <textarea rows={4}
+                  placeholder={'5호-아이린 / 혼합 / 5호  5장\n1호-챨스(10EA) / Image_color / 1호(1~2세)호  3장'}
+                  value={ocrText} onChange={(e) => { setOcrText(e.target.value); setMatchResults(null); }}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-primary-300" />
+                <button onClick={handleAutoMatch} disabled={!ocrText.trim()}
+                  className="mt-1.5 text-xs px-3 py-1.5 rounded-lg bg-primary-600 text-white font-medium disabled:opacity-40 hover:bg-primary-700 transition-colors">
+                  자동 매칭
+                </button>
               </div>
 
-              {/* 수량 표시 + 자동 조정 */}
-              <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-sm">
-                <div className="flex-1">
-                  <span className="text-slate-500">선택: </span>
-                  <span className={`font-bold ${qtyMismatch ? 'text-orange-600' : 'text-emerald-600'}`}>{checkedQty}장</span>
-                  {qtyValid && <span className="text-slate-400"> / 영수증 {totalQty}장</span>}
-                </div>
-                {qtyValid && (
-                  <button onClick={handleAutoAdjust}
-                    className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100 transition-colors">
-                    오래된 순 {totalQty}장 자동 선택
-                  </button>
-                )}
-              </div>
-
-              {/* 항목 목록 */}
-              {items.length === 0 ? (
-                <p className="text-sm text-slate-400 text-center py-6">확인 대기 중인 상품이 없습니다.</p>
-              ) : (
-                <div className="border border-slate-100 rounded-xl overflow-hidden">
+              {/* 매칭 결과표 */}
+              {matchResults && matchResults.length > 0 && (
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  <div className="bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 uppercase">매칭 결과</div>
                   <table className="w-full text-xs">
-                    <thead className="bg-slate-50 text-slate-400 uppercase">
+                    <thead className="bg-slate-50/60 text-slate-400">
                       <tr>
-                        <th className="px-3 py-2 w-8">
-                          <input type="checkbox"
-                            checked={items.length > 0 && items.every((it) => selectedIds.has(it.itemId))}
-                            onChange={(e) => setSelectedIds(e.target.checked ? new Set(items.map((it) => it.itemId)) : new Set())}
-                            className="w-3.5 h-3.5 accent-primary-600" />
-                        </th>
-                        <th className="px-3 py-2 text-left">상품명</th>
-                        <th className="px-3 py-2 text-left">컬러</th>
-                        <th className="px-3 py-2 text-left">사이즈</th>
-                        <th className="px-3 py-2 text-center">수량</th>
-                        <th className="px-3 py-2 text-left">발주일</th>
+                        <th className="px-3 py-1.5 text-left">영수증 항목</th>
+                        <th className="px-3 py-1.5 text-center">요청</th>
+                        <th className="px-3 py-1.5 text-center">대기</th>
+                        <th className="px-3 py-1.5 text-center">선택</th>
+                        <th className="px-3 py-1.5 text-left">상태</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {items.map((it) => {
-                        const checked  = selectedIds.has(it.itemId);
-                        const confDate = it.confirmedAt ? fmtDate(it.confirmedAt) : '-';
-                        const days     = waitDays(it.confirmedAt);
-                        return (
-                          <tr key={it.itemId}
-                            onClick={() => toggleItem(it.itemId)}
-                            className={`cursor-pointer transition-colors ${checked ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}>
-                            <td className="px-3 py-2">
-                              <input type="checkbox" checked={checked} onChange={() => toggleItem(it.itemId)}
-                                onClick={(e) => e.stopPropagation()}
-                                className="w-3.5 h-3.5 accent-emerald-600" />
-                            </td>
-                            <td className="px-3 py-2 max-w-[140px]">
-                              <span className="block truncate text-slate-800 font-medium">{it.productName}</span>
-                              <span className="text-slate-400">{it.userName}</span>
-                            </td>
-                            <td className="px-3 py-2 text-slate-600">{it.color || '-'}</td>
-                            <td className="px-3 py-2 text-slate-600">{it.size || '-'}</td>
-                            <td className="px-3 py-2 text-center font-semibold text-slate-800">{it.quantity}</td>
-                            <td className="px-3 py-2 text-slate-400 whitespace-nowrap">
-                              {confDate}
-                              {days > 7 && <span className="ml-1 text-orange-500 font-medium">D+{days}</span>}
-                            </td>
-                          </tr>
-                        );
-                      })}
+                      {matchResults.map((r, i) => (
+                        <tr key={i} className={r.status === 'notfound' ? 'bg-red-50/50' : r.status === 'partial' ? 'bg-orange-50/50' : ''}>
+                          <td className="px-3 py-1.5 max-w-[180px]">
+                            <span className="block truncate font-medium text-slate-700">{r.name}</span>
+                            <span className="text-slate-400">{r.color} / {r.size}</span>
+                          </td>
+                          <td className="px-3 py-1.5 text-center text-slate-600">{r.requestedQty}장</td>
+                          <td className="px-3 py-1.5 text-center text-slate-500">{r.availableQty}장</td>
+                          <td className="px-3 py-1.5 text-center font-semibold text-slate-800">{r.selectedQty}장</td>
+                          <td className="px-3 py-1.5">
+                            {r.status === 'ok'       && <span className="text-emerald-600">✓ 매칭</span>}
+                            {r.status === 'partial'  && <span className="text-orange-500">⚠ 영수증 {r.requestedQty}장 / 대기 {r.availableQty}장</span>}
+                            {r.status === 'notfound' && <span className="text-red-500">찾지 못함 — 직접 선택</span>}
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
               )}
 
-              {/* 에러 */}
-              {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+              {/* 선택 수량 표시 */}
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-sm">
+                <span className="text-slate-500">선택:</span>
+                <span className={`font-bold ${qtyMismatch ? 'text-orange-600' : 'text-emerald-600'}`}>{checkedQty}장</span>
+                {qtyValid && <span className="text-slate-400">/ 영수증 {totalQty}장</span>}
+                {qtyMismatch && <span className="text-xs text-orange-500 ml-auto">수량이 다릅니다 ({checkedQty - totalQty > 0 ? '+' : ''}{checkedQty - totalQty}장)</span>}
+              </div>
+
+              {/* 그룹별 항목 목록 */}
+              {groups.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-6">확인 대기 중인 상품이 없습니다.</p>
+              ) : (
+                <div className="border border-slate-100 rounded-xl overflow-hidden divide-y divide-slate-50">
+                  {groups.map((g) => {
+                    const selInGroup  = g.items.filter((it) => selectedIds.has(it.itemId));
+                    const selQty      = selInGroup.reduce((s, it) => s + it.quantity, 0);
+                    const allSel      = g.items.every((it) => selectedIds.has(it.itemId));
+                    const someSel     = selInGroup.length > 0 && !allSel;
+                    const isGrpOpen   = openGroups.has(g.key);
+                    return (
+                      <Fragment key={g.key}>
+                        <div className={`flex items-center gap-2 px-3 py-2 ${selQty > 0 ? 'bg-emerald-50/50' : 'hover:bg-slate-50'}`}>
+                          <input type="checkbox" checked={allSel}
+                            ref={(el) => { if (el) el.indeterminate = someSel; }}
+                            onChange={() => toggleGroup(g)}
+                            className="w-3.5 h-3.5 accent-emerald-600 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <span className="text-xs font-semibold text-slate-800 truncate block">{g.productName}</span>
+                            <span className="text-xs text-slate-400">{g.color} / {g.size}</span>
+                          </div>
+                          <span className="text-xs text-slate-400 flex-shrink-0">대기 {g.totalQty}장</span>
+                          {selQty > 0 && <span className="text-xs font-bold text-emerald-600 flex-shrink-0">선택 {selQty}장</span>}
+                          <button onClick={() => setOpenGroups((p) => { const n = new Set(p); n.has(g.key) ? n.delete(g.key) : n.add(g.key); return n; })}
+                            className="text-slate-400 hover:text-slate-600 flex-shrink-0 ml-1">
+                            <svg className={`w-3.5 h-3.5 transition-transform ${isGrpOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                        </div>
+                        {isGrpOpen && g.items.map((it) => {
+                          const checked = selectedIds.has(it.itemId);
+                          const days    = waitDays(it.confirmedAt);
+                          return (
+                            <div key={it.itemId} onClick={() => toggleItem(it.itemId)}
+                              className={`flex items-center gap-2 px-3 py-1.5 pl-8 text-xs cursor-pointer border-t border-slate-50 ${checked ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}>
+                              <input type="checkbox" checked={checked} onChange={() => toggleItem(it.itemId)}
+                                onClick={(e) => e.stopPropagation()} className="w-3 h-3 accent-emerald-600 flex-shrink-0" />
+                              <span className="flex-1 text-slate-600">
+                                {it.userName}
+                                <span className="ml-1.5 text-slate-400 font-mono">#{it.orderId.slice(-6).toUpperCase()}</span>
+                              </span>
+                              <span className="text-slate-400">{it.confirmedAt ? fmtDt(it.confirmedAt) : '-'}</span>
+                              {days > 7 && <span className="text-orange-500 font-medium">D+{days}</span>}
+                              <span className="font-semibold text-slate-700">{it.quantity}장</span>
+                            </div>
+                          );
+                        })}
+                      </Fragment>
+                    );
+                  })}
+                </div>
+              )}
+
+              {saveError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{saveError}</p>}
             </div>
           ) : (
             /* ── 이력 탭 ── */
@@ -1202,18 +1293,14 @@ function InvoiceModal({
                 <div className="space-y-3">
                   {history.map((r) => (
                     <div key={r.id} className="border border-slate-100 rounded-xl p-4">
-                      <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="flex items-start justify-between gap-2 mb-1">
                         <div>
-                          <span className="text-sm font-semibold text-slate-800">{fmtDate(r.createdAt)}</span>
-                          {r.receiptNumber && (
-                            <span className="ml-2 text-xs text-slate-500 font-mono bg-slate-100 px-1.5 py-0.5 rounded">{r.receiptNumber}</span>
-                          )}
+                          <span className="text-sm font-semibold text-slate-800">{fmtDt(r.createdAt)}</span>
+                          {r.receiptNumber && <span className="ml-2 text-xs font-mono bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{r.receiptNumber}</span>}
                         </div>
                         <div className="text-right text-xs text-slate-500">
                           영수증 {r.totalQty}장 / 처리 {r.checkedQty}장
-                          {r.totalQty !== r.checkedQty && (
-                            <span className="ml-1 text-orange-500">({r.totalQty - r.checkedQty}장 미처리)</span>
-                          )}
+                          {r.totalQty !== r.checkedQty && <span className="ml-1 text-orange-500">({r.totalQty - r.checkedQty}장 미처리)</span>}
                         </div>
                       </div>
                       <p className="text-xs text-slate-400">{r.items.length}건 입고 처리됨</p>
@@ -1231,18 +1318,12 @@ function InvoiceModal({
           )}
         </div>
 
-        {/* 푸터 (대조 탭에만) */}
+        {/* 푸터 */}
         {modalTab === '대조' && !dataLoading && (
-          <div className="flex items-center justify-between gap-3 px-5 py-4 border-t border-slate-100 flex-shrink-0 bg-white">
-            <button onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 transition-colors">취소</button>
-            {qtyMismatch && (
-              <p className="text-xs text-orange-600 flex-1 text-center">선택 수량({checkedQty}장)과 영수증 수량({totalQty}장)이 다릅니다</p>
-            )}
-            <button
-              onClick={handleSave}
-              disabled={saving || selectedIds.size === 0 || !qtyValid}
-              className="px-5 py-2 text-sm font-semibold bg-emerald-600 text-white rounded-lg disabled:opacity-40 hover:bg-emerald-700 transition-colors"
-            >
+          <div className="flex items-center justify-between gap-3 px-5 py-4 border-t border-slate-100 flex-shrink-0">
+            <button onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700">취소</button>
+            <button onClick={handleSave} disabled={saving || selectedIds.size === 0 || !qtyValid}
+              className="px-5 py-2 text-sm font-semibold bg-emerald-600 text-white rounded-lg disabled:opacity-40 hover:bg-emerald-700 transition-colors">
               {saving ? '처리 중...' : `입고 처리 (${checkedQty}장)`}
             </button>
           </div>

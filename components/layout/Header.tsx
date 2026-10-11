@@ -9,6 +9,7 @@ import NotificationBell from '@/components/NotificationBell';
 import LanguageSwitcher from '@/components/i18n/LanguageSwitcher';
 import { CATEGORY_GROUPS, SEASONS, SEASON_GROUP } from '@/lib/categoryGroups';
 import { localizeCategoryName } from '@/lib/productLocale';
+import { defaultAdminPath } from '@/lib/adminAccess';
 
 type Category = { id: string; slug: string; name: string; [key: string]: any };
 
@@ -66,6 +67,11 @@ export default function Header() {
       .then((d) => setQnaCount(d.count ?? 0))
       .catch(() => {});
   }, [session, pathname]);
+
+  const userRole       = (session?.user as any)?.role as string | undefined;
+  const userAdminZones = (session?.user as any)?.adminZones as string[] | undefined;
+  const isAdminStaff   = userRole === 'ADMIN' || (userRole === 'SUB_ADMIN' && (userAdminZones ?? []).length > 0);
+  const adminEntryPath = userRole === 'ADMIN' ? '/admin/dashboard' : defaultAdminPath(userAdminZones);
 
   return (
     <header className="bg-white shadow-sm sticky top-0 z-50">
@@ -165,8 +171,8 @@ export default function Header() {
                     <Link href="/home/mypage"          className="block px-4 py-2 text-sm text-slate-700 hover:bg-primary-50" onClick={() => setProfileMenuOpen(false)}>{t('nav.mypageFull')}</Link>
                     <Link href="/home/qna"             className="px-4 py-2 text-sm text-slate-700 hover:bg-primary-50 flex items-center" onClick={() => setProfileMenuOpen(false)}>{t('nav.qna')}<QnaBadge count={qnaCount} /></Link>
                     <Link href="/home/faq"             className="block px-4 py-2 text-sm text-slate-700 hover:bg-primary-50" onClick={() => setProfileMenuOpen(false)}>{t('nav.faq')}</Link>
-                    {(session.user as any)?.role === 'ADMIN' && (
-                      <Link href="/admin/dashboard" className="block px-4 py-2 text-sm text-primary-600 hover:bg-primary-50" onClick={() => setProfileMenuOpen(false)}>{t('nav.admin')}</Link>
+                    {isAdminStaff && (
+                      <Link href={adminEntryPath} className="block px-4 py-2 text-sm text-primary-600 hover:bg-primary-50" onClick={() => setProfileMenuOpen(false)}>{t('nav.admin')}</Link>
                     )}
                     <hr className="my-1" />
                     <button onClick={() => { signOut({ callbackUrl: '/login' }); setProfileMenuOpen(false); }} className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50">{t('nav.logout')}</button>
@@ -233,6 +239,11 @@ export default function Header() {
             <div className="px-4 py-2">
               <LanguageSwitcher />
             </div>
+            {session && isAdminStaff && (
+              <Link href={adminEntryPath} className="block px-4 py-2 text-sm text-primary-600 font-bold hover:bg-primary-50 rounded-lg" onClick={() => setMenuOpen(false)}>
+                {t('nav.admin')}
+              </Link>
+            )}
             {session && (
               <button
                 onClick={() => { signOut({ callbackUrl: '/login' }); setMenuOpen(false); }}

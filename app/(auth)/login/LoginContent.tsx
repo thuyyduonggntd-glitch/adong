@@ -5,6 +5,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
 import LanguageSwitcher from '@/components/i18n/LanguageSwitcher';
+import { defaultAdminPath } from '@/lib/adminAccess';
 
 export default function LoginContent() {
   const { t } = useTranslation();
@@ -41,6 +42,8 @@ export default function LoginContent() {
     const me = await meRes.json();
     if (me.role === 'ADMIN') {
       router.push('/admin/dashboard');
+    } else if (me.role === 'SUB_ADMIN' && Array.isArray(me.adminZones) && me.adminZones.length > 0) {
+      router.push(defaultAdminPath(me.adminZones));
     } else {
       router.push(callbackUrl);
     }

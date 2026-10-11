@@ -1624,6 +1624,111 @@ function waitDays(confirmedAt: string | null): number {
   return Math.floor((Date.now() - new Date(confirmedAt).getTime()) / 86400000);
 }
 
+// ── PendingMallView — 주문접수 탭 쇼핑몰별 모드 (서버 데이터 기반) ──────────────
+function PendingMallView({ onRefresh }: { onRefresh: () => void }) {
+  const [summary, setSummary]           = useState<ConfirmedSummaryRow[]>([]);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [openBrand, setOpenBrand]       = useState<string | null>(null);
+  const [brandItems, setBrandItems]     = useState<Record<string, FlatRow[]>>({});
+  const [brandLoading, setBrandLoading] = useState<Record<string, boolean>>({});
+
+  const fetchSummary = useCallback(async () => {
+    setSummaryLoading(true);
+    try {
+      const d = await fetch('/api/admin/pending-items?mode=summary').then((r) => r.json());
+      setSummary(Array.isArray(d) ? d : []);
+    } finally { setSummaryLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchSummary(); }, [fetchSummary]);
+
+  const handleBrandToggle = useCallback(async (brand: string) => {
+    if (openBrand === brand) { setOpenBrand(null); return; }
+    setOpenBrand(brand);
+    if (!brandItems[brand]) {
+      setBrandLoading((p) => ({ ...p, [brand]: true }));
+      try {
+        const d = await fetch(`/api/admin/pending-items?mode=detail&brand=${encodeURIComponent(brand)}`).then((r) => r.json());
+        setBrandItems((p) => ({ ...p, [brand]: Array.isArray(d) ? d : [] }));
+      } finally { setBrandLoading((p) => ({ ...p, [brand]: false })); }
+    }
+  }, [openBrand, brandItems]);
+
+  const UNASSIGNED = '미분류';
+  const mallGroups = useMemo(() => {
+    const byMall = new Map<string, ConfirmedSummaryRow[]>();
+    summary.forEach((row) => {
+      const mall = row.mall || UNASSIGNED;
+      const list = byMall.get(mall) ?? [];
+      list.push(row);
+      byMall.set(mall, list);
+    });
+    const entries = Array.from(byMall.entries()).sort(([a], [b]) => {
+      if (a === UNASSIGNED) return 1;
+      if (b === UNASSIGNED) return -1;
+      return a.localeCompare(b, 'ko');
+    });
+    return entries;
+  }, [summary]);
+
+  if (summaryLoading)
+    return <div className="text-center py-12 text-slate-400 text-sm">로딩 중...</div>;
+  if (summary.length === 0)
+    return <div className="text-center py-12 text-slate-400 text-sm">신규 접수 주문이 없습니다.</div>;
+
+  return (
+    <div className="space-y-5">
+      {mallGroups.map(([mall, brands]) => {
+        const mallQty = brands.reduce((s, b) => s + b.totalQty, 0);
+        return (
+          <div key={mall}>
+            <div className="flex items-center gap-2 mb-2 px-1">
+              <span className="text-sm font-bold text-slate-700">🏬 {mall}</span>
+              <span className="text-xs text-slate-400">브랜드 {brands.length}개 · 총 수량 {mallQty}</span>
+            </div>
+            <div className="space-y-2">
+              {brands.map((row) => (
+                <div key={row.brand} className="card overflow-hidden">
+                  <button
+                    onClick={() => handleBrandToggle(row.brand)}
+                    className={`w-full flex items-center justify-between px-5 py-4 text-left transition-colors ${openBrand === row.brand ? 'bg-primary-50' : 'hover:bg-slate-50'}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className={`text-sm font-bold ${openBrand === row.brand ? 'text-primary-700' : 'text-slate-800'}`}>{row.brand}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${openBrand === row.brand ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                        상품 {row.distinctCount}종 · 총 {row.totalQty}장
+                      </span>
+                    </div>
+                    <svg className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${openBrand === row.brand ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {openBrand === row.brand && (
+                    brandLoading[row.brand] ? (
+                      <div className="text-center py-8 text-slate-400 text-sm border-t border-slate-100">로딩 중...</div>
+                    ) : (brandItems[row.brand] ?? []).length === 0 ? (
+                      <div className="text-center py-8 text-slate-400 text-sm border-t border-slate-100">상품이 없습니다.</div>
+                    ) : (
+                      <div className="border-t border-slate-100">
+                        <BrandAccordionRow
+                          brand={row.brand}
+                          items={brandItems[row.brand] ?? []}
+                          isOpen={true}
+                          onToggle={() => {}}
+                        />
+                      </div>
+                    )
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── ConfirmedMallView — 주문확인 탭 쇼핑몰별 모드 (서버 데이터 기반) ─────────────
 function ConfirmedMallView({
   batches,
@@ -1947,15 +2052,35 @@ function ConfirmedBrandAccordion({
 /* ── 메인 페이지 ── */
 export default function AdminOrdersPage() {
   const [tab, setTab]   = useState<Tab>('주문접수');
-  const [pendingOrders, setPendingOrders]     = useState<Order[]>([]);
-  const [confirmedOrders, setConfirmedOrders] = useState<Order[]>([]);
+
+  // 탭 배지용 카운트 (orders-data에서 가져옴)
+  const [pendingCount, setPendingCount]     = useState(0);
+  const [confirmedCount, setConfirmedCount] = useState(0);
+
+  // 주문접수/확인 전체 뷰: 서버 페이지네이션
+  const [pendingRows, setPendingRows]                   = useState<FlatRow[]>([]);
+  const [pendingTotal, setPendingTotal]                 = useState(0);
+  const [pendingListLoading, setPendingListLoading]     = useState(false);
+  const [confirmedRows, setConfirmedRows]               = useState<FlatRow[]>([]);
+  const [confirmedTotal, setConfirmedTotal]             = useState(0);
+  const [confirmedListLoading, setConfirmedListLoading] = useState(false);
+
+  // 전체입고: lazy load
+  const [inboundHistoryLoaded, setInboundHistoryLoaded]     = useState(false);
+  const [inboundHistoryLoading, setInboundHistoryLoading]   = useState(false);
+  const [inboundAllArrivedItems, setInboundAllArrivedItems] = useState<ArrivedItem[]>([]);
+  const [inboundAllInbounds, setInboundAllInbounds]         = useState<InboundRec[]>([]);
+  // 더 오래된 데이터 로드를 위한 dateFrom 확장
+  const [inboundFromDate, setInboundFromDate] = useState(() => {
+    const d = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    return d.toISOString().split('T')[0];
+  });
+
   const [todayInbounds, setTodayInbounds]     = useState<InboundRec[]>([]);
-  const [allInbounds, setAllInbounds]         = useState<InboundRec[]>([]);
   const [todayArrivedItems, setTodayArrivedItems]           = useState<ArrivedItem[]>([]);
-  const [allArrivedOrderItems, setAllArrivedOrderItems]     = useState<ArrivedItem[]>([]);
   const [outStockUnshippedItems, setOutStockUnshippedItems] = useState<OutStockUnshippedItem[]>([]);
   const [loading, setLoading]       = useState(true);
-  const [selected, setSelected]     = useState<Set<string>>(new Set()); // itemId 기반, 탭 전환 시 유지
+  const [selected, setSelected]     = useState<Set<string>>(new Set());
   const [search, setSearch]         = useState('');
   const [pendingPage, setPendingPage]     = useState(1);
   const [confirmedPage, setConfirmedPage] = useState(1);
@@ -1971,11 +2096,14 @@ export default function AdminOrdersPage() {
     cancelFrom: '' as string,
     cancelTo: '' as string,
   });
-  const [pendingViewMode, setPendingViewMode] = useState<'전체' | '쇼핑몰별'>('쇼핑몰별');
+  const [pendingViewMode, setPendingViewMode]     = useState<'전체' | '쇼핑몰별'>('쇼핑몰별');
   const [confirmedViewMode, setConfirmedViewMode] = useState<'쇼핑몰별' | '전체'>('쇼핑몰별');
   const [confirmedBatchFilter, setConfirmedBatchFilter] = useState<string>('all');
-  const [confirmedBatches, setConfirmedBatches] = useState<Array<OrderBatch & { label: string }>>([]);
+  const [confirmedBatches, setConfirmedBatches]         = useState<Array<OrderBatch & { label: string }>>([]);
   const [brandMallMap, setBrandMallMap] = useState<Record<string, string>>({});
+
+  // 리프레시 버전 — 증가하면 활성 뷰 재로드
+  const [refreshVersion, setRefreshVersion] = useState(0);
 
   // 품절/미송 비고 모달
   const [remarkModal, setRemarkModal] = useState<{ action: 'outOfStock' | 'unshipped'; itemIds: string[] } | null>(null);
@@ -1983,14 +2111,64 @@ export default function AdminOrdersPage() {
   // 품절/미송 탭 인라인 비고 편집
   const [editItemRemark, setEditItemRemark] = useState<{ id: string; value: string } | null>(null);
 
+  // ── 디바운스 검색 ──────────────────────────────────────────────────────────
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const searchMountedRef = useRef(false);
+  useEffect(() => {
+    clearTimeout(searchTimerRef.current!);
+    searchTimerRef.current = setTimeout(() => {
+      setDebouncedSearch(search);
+      if (searchMountedRef.current) { setPendingPage(1); setConfirmedPage(1); }
+      searchMountedRef.current = true;
+    }, 300);
+    return () => clearTimeout(searchTimerRef.current!);
+  }, [search]);
+
+  // ── fetch 함수 ─────────────────────────────────────────────────────────────
+  const fetchPendingList = useCallback(async (page: number, q: string) => {
+    setPendingListLoading(true);
+    try {
+      const params = new URLSearchParams({ mode: 'list', page: String(page) });
+      if (q) params.set('search', q);
+      const d = await fetch(`/api/admin/pending-items?${params}`).then((r) => r.json());
+      setPendingRows(Array.isArray(d.rows) ? d.rows : []);
+      setPendingTotal(d.total ?? 0);
+    } finally { setPendingListLoading(false); }
+  }, []);
+
+  const fetchConfirmedList = useCallback(async (page: number, q: string) => {
+    setConfirmedListLoading(true);
+    try {
+      const params = new URLSearchParams({ mode: 'list', page: String(page) });
+      if (q) params.set('search', q);
+      const d = await fetch(`/api/admin/confirmed-items?${params}`).then((r) => r.json());
+      setConfirmedRows(Array.isArray(d.rows) ? d.rows : []);
+      setConfirmedTotal(d.total ?? 0);
+    } finally { setConfirmedListLoading(false); }
+  }, []);
+
+  const fetchInboundHistory = useCallback(async (fromDate: string, brand: string) => {
+    setInboundHistoryLoading(true);
+    try {
+      const params = new URLSearchParams({ dateFrom: fromDate });
+      if (brand) params.set('brand', brand);
+      const d = await fetch(`/api/admin/inbound-history?${params}`).then((r) => r.json());
+      setInboundAllArrivedItems(Array.isArray(d.arrivedItems) ? d.arrivedItems : []);
+      setInboundAllInbounds(Array.isArray(d.inbounds) ? d.inbounds : []);
+      setInboundHistoryLoaded(true);
+    } finally { setInboundHistoryLoading(false); }
+  }, []);
+
+  // ── 초기 데이터 로드 ───────────────────────────────────────────────────────
   useEffect(() => {
     fetch('/api/admin/orders-data').then((r) => r.json()).then((d) => {
-      setPendingOrders(d.pendingOrders); setConfirmedOrders(d.confirmedOrders);
-      setTodayInbounds(d.todayInbounds); setAllInbounds(d.allInbounds);
+      setPendingCount(d.pendingCount ?? 0);
+      setConfirmedCount(d.confirmedCount ?? 0);
+      setTodayInbounds(d.todayInbounds);
       setTodayArrivedItems(d.todayArrivedItems);
       setCancelPolicy({ globalEnabled: d.cancelPolicy.globalEnabled ?? false, timeLimit: d.cancelPolicy.timeLimit ?? null, cancelFrom: d.cancelPolicy.cancelFrom ?? '', cancelTo: d.cancelPolicy.cancelTo ?? '' });
       setOutStockUnshippedItems(Array.isArray(d.outOfStockUnshippedItems) ? d.outOfStockUnshippedItems : []);
-      setAllArrivedOrderItems(Array.isArray(d.allArrivedOrderItems) ? d.allArrivedOrderItems : []);
       setLoading(false);
     });
     fetch('/api/brands').then((r) => r.json()).then((d) => {
@@ -2005,59 +2183,62 @@ export default function AdminOrdersPage() {
     });
   }, []);
 
-  const allOrderRows  = useMemo(() => flattenOrders([...pendingOrders, ...confirmedOrders]), [pendingOrders, confirmedOrders]);
-  const pendingRows   = useMemo(() => allOrderRows.filter((r) => !r.confirmedAt && !r.cancelledAt && !r.arrivedAt && !r.outOfStockAt && !r.unshippedAt), [allOrderRows]);
-  const confirmedRows = useMemo(() => allOrderRows.filter((r) => !!r.confirmedAt && !r.arrivedAt && !r.cancelledAt && !r.outOfStockAt && !r.unshippedAt), [allOrderRows]);
+  // ── 전체 뷰 활성 시 서버에서 페이지 데이터 로드 ─────────────────────────
+  useEffect(() => {
+    if (loading || pendingViewMode !== '전체') return;
+    fetchPendingList(pendingPage, debouncedSearch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, pendingViewMode, pendingPage, debouncedSearch, refreshVersion]);
 
-  const filterRows = useCallback((rows: FlatRow[]) => {
-    if (!search) return rows;
-    const q = search.toLowerCase();
-    return rows.filter((r) =>
-      r.userName.toLowerCase().includes(q) ||
-      r.product.name.toLowerCase().includes(q) ||
-      r.brand.toLowerCase().includes(q)
-    );
-  }, [search]);
+  useEffect(() => {
+    if (loading || confirmedViewMode !== '전체') return;
+    fetchConfirmedList(confirmedPage, debouncedSearch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, confirmedViewMode, confirmedPage, debouncedSearch, refreshVersion]);
 
-  const filteredPending   = useMemo(() => filterRows(pendingRows),   [pendingRows,   filterRows]);
-  const filteredConfirmed = useMemo(() => filterRows(confirmedRows), [confirmedRows, filterRows]);
+  // 전체입고 탭 진입 시 최초 1회 로드
+  useEffect(() => {
+    if (loading || tab !== '전체입고' || inboundHistoryLoaded) return;
+    fetchInboundHistory(inboundFromDate, inboundBrandFilter);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, tab, inboundHistoryLoaded]);
 
-  /* 큐 페이지네이션 — "전체 선택"은 안전을 위해 현재 페이지에 보이는 건만 선택 대상으로 삼는다 */
-  const totalPendingPages   = Math.max(1, Math.ceil(filteredPending.length / QUEUE_PAGE_SIZE));
-  const totalConfirmedPages = Math.max(1, Math.ceil(filteredConfirmed.length / QUEUE_PAGE_SIZE));
-  const pagedPending   = useMemo(() => filteredPending.slice((pendingPage - 1) * QUEUE_PAGE_SIZE, pendingPage * QUEUE_PAGE_SIZE), [filteredPending, pendingPage]);
-  const pagedConfirmed = useMemo(() => filteredConfirmed.slice((confirmedPage - 1) * QUEUE_PAGE_SIZE, confirmedPage * QUEUE_PAGE_SIZE), [filteredConfirmed, confirmedPage]);
+  const totalPendingPages   = Math.max(1, Math.ceil(pendingTotal   / QUEUE_PAGE_SIZE));
+  const totalConfirmedPages = Math.max(1, Math.ceil(confirmedTotal / QUEUE_PAGE_SIZE));
 
-  useEffect(() => { setPendingPage(1); setConfirmedPage(1); }, [search]);
   useEffect(() => { setInboundAllPage(1); }, [inboundDateFilter, inboundBrandFilter, inboundIdFilter]);
-  // 일괄처리로 목록이 줄어들어 현재 페이지가 범위를 벗어나면 마지막 페이지로 보정
-  useEffect(() => { setPendingPage((p) => Math.min(p, totalPendingPages)); }, [totalPendingPages]);
-  useEffect(() => { setConfirmedPage((p) => Math.min(p, totalConfirmedPages)); }, [totalConfirmedPages]);
 
+  // 전체입고 필터 변경 시 서버 재조회
+  const inboundBrandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!inboundHistoryLoaded) return;
+    clearTimeout(inboundBrandTimerRef.current!);
+    inboundBrandTimerRef.current = setTimeout(() => {
+      fetchInboundHistory(inboundFromDate, inboundBrandFilter);
+    }, 300);
+    return () => clearTimeout(inboundBrandTimerRef.current!);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inboundFromDate, inboundBrandFilter]);
+
+  // 전체입고: lazy 데이터에 날짜 필터 적용 (브랜드는 이미 API에서 필터됨)
   const filteredInbounds = useMemo(() => {
-    if (!inboundDateFilter && !inboundBrandFilter) return [];
-    const brandQ = inboundBrandFilter.toLowerCase();
-    return allInbounds.filter((ib) => {
-      if (inboundBrandFilter && !ib.brand.toLowerCase().includes(brandQ)) return false;
-      if (!inboundDateFilter) return true;
+    if (!inboundDateFilter) return inboundAllInbounds;
+    return inboundAllInbounds.filter((ib) => {
       const d = new Date(ib.arrivedAt); d.setHours(0, 0, 0, 0);
       const f = new Date(inboundDateFilter); f.setHours(0, 0, 0, 0);
       return d.getTime() === f.getTime();
     });
-  }, [allInbounds, inboundDateFilter, inboundBrandFilter]);
+  }, [inboundAllInbounds, inboundDateFilter]);
 
   const filteredAllArrived = useMemo(() => {
-    if (!inboundDateFilter && !inboundBrandFilter) return [];
-    const brandQ = inboundBrandFilter.toLowerCase();
-    return allArrivedOrderItems.filter((it) => {
-      if (inboundBrandFilter && !(it.product.brand || '').toLowerCase().includes(brandQ)) return false;
-      if (!inboundDateFilter) return true;
+    if (!inboundDateFilter) return inboundAllArrivedItems;
+    return inboundAllArrivedItems.filter((it) => {
       const start = new Date(inboundDateFilter); start.setHours(0, 0, 0, 0);
       const end   = new Date(inboundDateFilter); end.setHours(23, 59, 59, 999);
-      const t = new Date(it.arrivedAt).getTime();
+      const t     = new Date(it.arrivedAt).getTime();
       return t >= start.getTime() && t <= end.getTime();
     });
-  }, [allArrivedOrderItems, inboundDateFilter, inboundBrandFilter]);
+  }, [inboundAllArrivedItems, inboundDateFilter]);
 
   /* ── 일별입고 인쇄용 통합 행 (주문 입고 + 공급업체 입고) ── */
   const todayInboundRows: DailyRow[] = useMemo(() => [
@@ -2138,13 +2319,13 @@ export default function AdminOrdersPage() {
   const applyPriceUpdate = (source: 'order' | 'supplier', id: string, price: number) => {
     if (source === 'order') {
       setTodayArrivedItems((prev) => prev.map((it) => it.id === id ? { ...it, price } : it));
-      setAllArrivedOrderItems((prev) => prev.map((it) => it.id === id ? { ...it, price } : it));
+      setInboundAllArrivedItems((prev) => prev.map((it) => it.id === id ? { ...it, price } : it));
     } else {
       const patchInbounds = (list: InboundRec[]) => list.map((ib) => ({
         ...ib, items: ib.items.map((item) => item.id === id ? { ...item, price } : item),
       }));
       setTodayInbounds(patchInbounds);
-      setAllInbounds(patchInbounds);
+      setInboundAllInbounds(patchInbounds);
     }
   };
 
@@ -2204,12 +2385,14 @@ export default function AdminOrdersPage() {
   /* ── 전체 데이터 리프레시 ── */
   const refreshData = useCallback(async () => {
     const d = await fetch('/api/admin/orders-data').then((r) => r.json());
-    setPendingOrders(d.pendingOrders); setConfirmedOrders(d.confirmedOrders);
-    setTodayInbounds(d.todayInbounds); setAllInbounds(d.allInbounds);
+    setPendingCount(d.pendingCount ?? 0);
+    setConfirmedCount(d.confirmedCount ?? 0);
+    setTodayInbounds(d.todayInbounds);
     setTodayArrivedItems(d.todayArrivedItems);
     setOutStockUnshippedItems(Array.isArray(d.outOfStockUnshippedItems) ? d.outOfStockUnshippedItems : []);
-    setAllArrivedOrderItems(Array.isArray(d.allArrivedOrderItems) ? d.allArrivedOrderItems : []);
     setSelected(new Set());
+    setInboundHistoryLoaded(false); // 전체입고 다음 진입 시 재로드
+    setRefreshVersion((v) => v + 1); // 활성 목록 재로드 트리거
   }, []);
 
   /* ── 토글 함수 ── */
@@ -2222,8 +2405,8 @@ export default function AdminOrdersPage() {
   useEffect(() => { setOusuPage((p) => Math.min(p, ousuTotalPages)); }, [ousuTotalPages]);
 
   // 안전을 위해 "전체 선택"은 현재 페이지에 보이는 건만 대상으로 한다 (안 본 페이지의 주문이 실수로 함께 처리되는 것을 방지)
-  const toggleAllPending   = useCallback(() => makeToggleAll(pagedPending.map((r) => r.itemId),             selected, setSelected)(), [pagedPending,            selected]);
-  const toggleAllConfirmed = useCallback(() => makeToggleAll(pagedConfirmed.map((r) => r.itemId),           selected, setSelected)(), [pagedConfirmed,          selected]);
+  const toggleAllPending   = useCallback(() => makeToggleAll(pendingRows.map((r) => r.itemId),   selected, setSelected)(), [pendingRows,   selected]);
+  const toggleAllConfirmed = useCallback(() => makeToggleAll(confirmedRows.map((r) => r.itemId), selected, setSelected)(), [confirmedRows, selected]);
   const toggleAllArrived   = useCallback(() => makeToggleAll(pagedTodayArrivedItems.map((it) => it.id),     selected, setSelected)(), [pagedTodayArrivedItems, selected]);
   const toggleAllOusu      = useCallback(() => makeToggleAll(pagedOusu.map((it) => it.id),                  selected, setSelected)(), [pagedOusu,               selected]);
 
@@ -2330,8 +2513,9 @@ export default function AdminOrdersPage() {
     const itemIds = [...selPending, ...selConfirmed].map((r) => r.itemId);
     if (!itemIds.length) return;
     await fetch('/api/orders/items', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemIds, cancelLocked: lock }) });
-    const updater = (o: Order[]) => o.map((ord) => ({ ...ord, items: ord.items.map((it) => itemIds.includes(it.id) ? { ...it, cancelLocked: lock } : it) }));
-    setPendingOrders(updater); setConfirmedOrders(updater);
+    const patcher = (rows: FlatRow[]) => rows.map((r) => itemIds.includes(r.itemId) ? { ...r, itemCancelLocked: lock } : r);
+    setPendingRows(patcher);
+    setConfirmedRows(patcher);
     setSelected((s) => { const n = new Set(s); itemIds.forEach((id) => n.delete(id)); return n; });
   };
 
@@ -2351,7 +2535,7 @@ export default function AdminOrdersPage() {
   const handleDeleteInbound = async (id: string) => {
     await fetch(`/api/inbound/${id}`, { method: 'DELETE' });
     setTodayInbounds((p) => p.filter((i) => i.id !== id));
-    setAllInbounds((p) => p.filter((i) => i.id !== id));
+    setInboundAllInbounds((p) => p.filter((i) => i.id !== id));
   };
 
   const handlePolicyUpdate = async () => {
@@ -2379,10 +2563,9 @@ export default function AdminOrdersPage() {
             <button key={t} onClick={() => setTab(t)}
               className={`relative px-5 py-2 rounded-lg text-sm font-medium transition-colors ${tab === t ? 'bg-white text-primary-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
               {t}
-              {t === '주문접수'  && pendingRows.length    > 0 && <span className="ml-1.5 text-xs bg-primary-600 text-white rounded-full px-1.5 py-0.5">{pendingRows.length}</span>}
-              {t === '주문확인'  && confirmedRows.length  > 0 && <span className="ml-1.5 text-xs bg-green-600 text-white rounded-full px-1.5 py-0.5">{confirmedRows.length}</span>}
+              {t === '주문접수'  && pendingCount   > 0 && <span className="ml-1.5 text-xs bg-primary-600 text-white rounded-full px-1.5 py-0.5">{pendingCount}</span>}
+              {t === '주문확인'  && confirmedCount > 0 && <span className="ml-1.5 text-xs bg-green-600 text-white rounded-full px-1.5 py-0.5">{confirmedCount}</span>}
               {t === '일별입고'  && todayArrivedItems.length > 0 && <span className="ml-1.5 text-xs bg-blue-500 text-white rounded-full px-1.5 py-0.5">{todayArrivedItems.length}</span>}
-              {t === '전체입고'  && allArrivedOrderItems.length > 0 && <span className="ml-1.5 text-xs bg-slate-500 text-white rounded-full px-1.5 py-0.5">{allArrivedOrderItems.length}</span>}
               {t === '품절/미송' && outStockUnshippedItems.length > 0 && <span className="ml-1.5 text-xs bg-orange-500 text-white rounded-full px-1.5 py-0.5">{outStockUnshippedItems.length}</span>}
               {selCnt > 0 && <span className="ml-1 text-xs bg-yellow-400 text-slate-800 rounded-full px-1.5 py-0.5 font-bold">{selCnt}✓</span>}
             </button>
@@ -2436,7 +2619,9 @@ export default function AdminOrdersPage() {
           {tab === '주문접수' && (
             <div>
               <div className="flex items-center gap-3 mb-4 flex-wrap">
-                <input className="input max-w-xs text-sm" placeholder="아이디, 브랜드, 상품명..." value={search} onChange={(e) => setSearch(e.target.value)} />
+                {pendingViewMode === '전체' && (
+                  <input className="input max-w-xs text-sm" placeholder="아이디, 브랜드, 상품명..." value={search} onChange={(e) => setSearch(e.target.value)} />
+                )}
                 <div className="flex bg-slate-100 rounded-lg p-1 gap-1">
                   {(['쇼핑몰별', '전체'] as const).map((mode) => (
                     <button
@@ -2450,19 +2635,23 @@ export default function AdminOrdersPage() {
                 </div>
               </div>
               {pendingViewMode === '쇼핑몰별' ? (
-                <MallOrderView rows={filteredPending} brandMallMap={brandMallMap} />
+                <PendingMallView onRefresh={refreshData} />
               ) : (
                 <>
                   <QueuePagination page={pendingPage} totalPages={totalPendingPages} onChange={setPendingPage}
-                    totalCount={pendingRows.length} label="전체 미처리:" />
-                  <OrderTable
-                    rows={pagedPending} selected={selected} onToggleRow={toggleRow} onToggleAll={toggleAllPending}
-                    actions={[
-                      { label: '주문 확인으로 변경', color: 'bg-green-600', onClick: confirmSelected },
-                      { label: '취소불가 잠금', color: 'bg-red-500', onClick: () => setCancelLock(true) },
-                      { label: '취소 허용', color: 'bg-slate-500', onClick: () => setCancelLock(false) },
-                    ]}
-                  />
+                    totalCount={pendingTotal} label="전체 미처리:" />
+                  {pendingListLoading ? (
+                    <div className="text-center py-12 text-slate-400 text-sm">로딩 중...</div>
+                  ) : (
+                    <OrderTable
+                      rows={pendingRows} selected={selected} onToggleRow={toggleRow} onToggleAll={toggleAllPending}
+                      actions={[
+                        { label: '주문 확인으로 변경', color: 'bg-green-600', onClick: confirmSelected },
+                        { label: '취소불가 잠금', color: 'bg-red-500', onClick: () => setCancelLock(true) },
+                        { label: '취소 허용', color: 'bg-slate-500', onClick: () => setCancelLock(false) },
+                      ]}
+                    />
+                  )}
                 </>
               )}
             </div>
@@ -2515,17 +2704,21 @@ export default function AdminOrdersPage() {
               ) : (
                 <>
                   <QueuePagination page={confirmedPage} totalPages={totalConfirmedPages} onChange={setConfirmedPage}
-                    totalCount={confirmedRows.length} label="전체 확인대기:" />
-                  <OrderTable
-                    rows={pagedConfirmed} selected={selected} onToggleRow={toggleRow} onToggleAll={toggleAllConfirmed}
-                    actions={[
-                      { label: '✓ 입고 처리', color: 'bg-emerald-600', onClick: markAsArrived },
-                      { label: '품절 처리', color: 'bg-orange-500', onClick: markAsOutOfStock },
-                      { label: '미송 처리', color: 'bg-purple-600', onClick: markAsUnshipped },
-                      { label: '취소불가 잠금', color: 'bg-red-500', onClick: () => setCancelLock(true) },
-                      { label: '취소 허용', color: 'bg-slate-500', onClick: () => setCancelLock(false) },
-                    ]}
-                  />
+                    totalCount={confirmedTotal} label="전체 확인대기:" />
+                  {confirmedListLoading ? (
+                    <div className="text-center py-12 text-slate-400 text-sm">로딩 중...</div>
+                  ) : (
+                    <OrderTable
+                      rows={confirmedRows} selected={selected} onToggleRow={toggleRow} onToggleAll={toggleAllConfirmed}
+                      actions={[
+                        { label: '✓ 입고 처리', color: 'bg-emerald-600', onClick: markAsArrived },
+                        { label: '품절 처리', color: 'bg-orange-500', onClick: markAsOutOfStock },
+                        { label: '미송 처리', color: 'bg-purple-600', onClick: markAsUnshipped },
+                        { label: '취소불가 잠금', color: 'bg-red-500', onClick: () => setCancelLock(true) },
+                        { label: '취소 허용', color: 'bg-slate-500', onClick: () => setCancelLock(false) },
+                      ]}
+                    />
+                  )}
                 </>
               )}
             </div>
@@ -2643,13 +2836,23 @@ export default function AdminOrdersPage() {
                 {(inboundDateFilter || inboundBrandFilter) && (
                   <button onClick={() => { setInboundDateFilter(''); setInboundBrandFilter(''); }} className="text-xs text-slate-500 hover:text-slate-700">초기화</button>
                 )}
+                <span className="text-xs text-slate-400">
+                  {inboundFromDate} ~ 오늘
+                </span>
+                <button
+                  onClick={() => {
+                    const prev = new Date(inboundFromDate);
+                    prev.setDate(prev.getDate() - 90);
+                    setInboundFromDate(prev.toISOString().split('T')[0]);
+                  }}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors"
+                >
+                  이전 90일 더 보기
+                </button>
               </div>
 
-              {!inboundDateFilter && !inboundBrandFilter ? (
-                <div className="text-center py-20 text-slate-400">
-                  <div className="text-5xl mb-3">📅</div>
-                  <p className="text-sm">날짜 또는 브랜드를 입력하면 입고 내역을 확인할 수 있습니다.</p>
-                </div>
+              {inboundHistoryLoading ? (
+                <div className="text-center py-16 text-slate-400 text-sm">로딩 중...</div>
               ) : (() => {
                 const supplierRows = filteredInbounds.flatMap((ib) =>
                   ib.items.map((item) => ({

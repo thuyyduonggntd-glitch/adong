@@ -1,5 +1,6 @@
 'use client';
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { formatPrice, getSaleLabel, DEALER_GRADE_ORDER } from '@/lib/utils';
 import Pagination from '@/components/ui/Pagination';
@@ -427,8 +428,8 @@ export default function AdminProductsPage() {
                         </button>
                       </td>
                       <td className="px-3 py-2">
-                        <div className="w-12 h-12 rounded-lg overflow-hidden bg-primary-50 flex-shrink-0">
-                          <img src={product.images[0] || '/no-image.svg'} alt={product.name} className="w-full h-full object-cover" />
+                        <div className="w-12 h-12 rounded-lg overflow-hidden bg-primary-50 flex-shrink-0 relative">
+                          <Image src={product.images[0] || '/no-image.svg'} alt={product.name} fill sizes="48px" className="object-cover" />
                         </div>
                       </td>
                       <td className="px-3 py-2">

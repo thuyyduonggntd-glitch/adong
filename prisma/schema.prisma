@@ -180,6 +180,9 @@ model Product {
 
   @@index([categoryId])
   @@index([sizeCategoryId])
+  @@index([isActive])
+  @@index([brand])
+  @@index([season])
 }
 
 model ProductVariant {
@@ -267,6 +270,7 @@ model OrderItem {
   @@index([orderId])
   @@index([productId])
   @@index([arrivedAt])
+  @@index([confirmedAt])
   @@index([outOfStockAt])
   @@index([unshippedAt])
   @@index([cancelledAt])

@@ -26,6 +26,7 @@ const ITEM_SELECT = {
     select: {
       id: true, name: true, images: true, brand: true, productNumber: true,
       colorCodes: { select: { color: true, code: true } },
+      colorImages: { select: { color: true, imageUrl: true }, orderBy: { sequence: 'asc' } },
     },
   },
 } as const;
@@ -70,6 +71,7 @@ export async function GET(req: NextRequest) {
       productName:  it.product?.name ?? '',
       productNumber: it.product?.productNumber ?? null,
       colorCodes:   it.product?.colorCodes ?? [],
+      colorImages:  (it.product as any)?.colorImages ?? [],
       images:       it.product?.images ?? [],
       size:         it.size,
       color:        it.color,

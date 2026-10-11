@@ -82,7 +82,8 @@ type ConfirmedItem = {
   itemId: string; orderId: string; userName: string;
   brand: string; productId: string; productName: string;
   productNumber: string | null; colorCodes: { color: string; code: string }[];
-  images: string[]; size: string; color: string; quantity: number; price: number;
+  images: string[]; colorImages: { color: string; imageUrl: string }[];
+  size: string; color: string; quantity: number; price: number;
   confirmedAt: string | null; orderBatchId: string | null;
   orderDate: string; note: string | null;
 };
@@ -990,6 +991,96 @@ type InvoiceReceiptHistory = {
   items: Array<{ id: string; orderItemId: string; confirmedAt: string | null }>;
 };
 
+// ── 이미지 lightbox (영수증 대조 모달 내부용) ────────────────────────────────
+type LightboxItem = {
+  productId: string; productName: string; color: string; size: string;
+  productNumber: string | null;
+  images: string[]; colorImages: { color: string; imageUrl: string }[];
+  initialIndex: number;
+};
+
+function InvoiceLightbox({ item, onClose }: { item: LightboxItem; onClose: () => void }) {
+  // 현재 색상 이미지를 앞에, 나머지 이미지를 뒤에 배치
+  const allImages = useMemo(() => {
+    const colorImg = item.colorImages.find((ci) => ci.color === item.color)?.imageUrl;
+    const rest     = item.images.filter((img) => img !== colorImg);
+    return colorImg ? [colorImg, ...rest] : item.images.length > 0 ? item.images : ['/no-image.svg'];
+  }, [item]);
+
+  const [idx, setIdx] = useState(0);
+
+  const prev = () => setIdx((i) => (i - 1 + allImages.length) % allImages.length);
+  const next = () => setIdx((i) => (i + 1) % allImages.length);
+
+  // 키보드 + 터치 스와이프
+  const touchStartX = useRef<number | null>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowLeft')  prev();
+      if (e.key === 'ArrowRight') next();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80"
+      onClick={onClose}
+      onTouchStart={(e) => { touchStartX.current = e.touches[0].clientX; }}
+      onTouchEnd={(e) => {
+        if (touchStartX.current === null) return;
+        const dx = e.changedTouches[0].clientX - touchStartX.current;
+        if (Math.abs(dx) > 40) dx < 0 ? next() : prev();
+        touchStartX.current = null;
+      }}>
+      <div className="relative w-full max-w-lg mx-4 flex flex-col items-center gap-3"
+        onClick={(e) => e.stopPropagation()}>
+
+        {/* 닫기 */}
+        <button onClick={onClose}
+          className="absolute -top-10 right-0 text-white/80 hover:text-white text-3xl leading-none z-10">×</button>
+
+        {/* 메인 이미지 */}
+        <div className="relative w-full aspect-square bg-black rounded-xl overflow-hidden">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={allImages[idx]} alt={item.productName} loading="lazy"
+            className="w-full h-full object-contain" />
+          {allImages.length > 1 && (
+            <>
+              <button onClick={(e) => { e.stopPropagation(); prev(); }}
+                className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 text-lg">‹</button>
+              <button onClick={(e) => { e.stopPropagation(); next(); }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 text-lg">›</button>
+            </>
+          )}
+          {allImages.length > 1 && (
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+              {allImages.map((_, i) => (
+                <button key={i} onClick={(e) => { e.stopPropagation(); setIdx(i); }}
+                  className={`w-1.5 h-1.5 rounded-full transition-colors ${i === idx ? 'bg-white' : 'bg-white/40'}`} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 상품 정보 */}
+        <div className="bg-white/10 backdrop-blur-sm text-white rounded-xl px-4 py-3 w-full text-sm">
+          <p className="font-semibold">{item.productName}</p>
+          <p className="text-white/70 text-xs mt-0.5">{item.color} / {item.size}{item.productNumber ? ` · ${item.productNumber}` : ''}</p>
+        </div>
+
+        {/* 상품 페이지 */}
+        <a href={`/home/products/${item.productId}`} target="_blank" rel="noopener noreferrer"
+          className="w-full text-center py-2 bg-white/20 hover:bg-white/30 text-white text-sm font-medium rounded-xl transition-colors"
+          onClick={(e) => e.stopPropagation()}>
+          상품 페이지 열기 ↗
+        </a>
+      </div>
+    </div>
+  );
+}
+
 // ── 영수증 대조 모달 ──────────────────────────────────────────────────────────
 function InvoiceModal({
   brand, batchFilter, onClose, onArrived,
@@ -1013,6 +1104,7 @@ function InvoiceModal({
   const [openGroups, setOpenGroups]       = useState<Set<string>>(new Set());
   const [saving, setSaving]               = useState(false);
   const [saveError, setSaveError]         = useState('');
+  const [lightbox, setLightbox]           = useState<LightboxItem | null>(null);
 
   useEffect(() => {
     setDataLoading(true);
@@ -1119,6 +1211,17 @@ function InvoiceModal({
     return `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
   };
 
+  const openLightbox = (it: ConfirmedItem) => {
+    setLightbox({
+      productId: it.productId, productName: it.productName,
+      color: it.color, size: it.size, productNumber: it.productNumber,
+      images: it.images, colorImages: it.colorImages, initialIndex: 0,
+    });
+  };
+
+  const thumbSrc = (it: ConfirmedItem) =>
+    resolveColorImage(it.color, it.colorImages, it.images, '/no-image.svg');
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4" onClick={onClose}>
       <div className="bg-white w-full sm:rounded-2xl sm:max-w-2xl sm:mx-4 shadow-2xl flex flex-col"
@@ -1198,11 +1301,28 @@ function InvoiceModal({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {matchResults.map((r, i) => (
+                      {matchResults.map((r, i) => {
+                        // 매칭된 그룹의 첫 번째 아이템으로 썸네일 찾기
+                        const matchedGrp = r.groupKey ? groups.find((g) => g.key === r.groupKey) : null;
+                        const matchedIt  = matchedGrp?.items[0];
+                        const thumb      = matchedIt ? thumbSrc(matchedIt) : null;
+                        return (
                         <tr key={i} className={r.status === 'notfound' ? 'bg-red-50/50' : r.status === 'partial' ? 'bg-orange-50/50' : ''}>
-                          <td className="px-3 py-1.5 max-w-[180px]">
-                            <span className="block truncate font-medium text-slate-700">{r.name}</span>
-                            <span className="text-slate-400">{r.color} / {r.size}</span>
+                          <td className="px-3 py-1.5 max-w-[200px]">
+                            <div className="flex items-center gap-2">
+                              {thumb && (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={thumb} alt="" loading="lazy"
+                                  onClick={() => matchedIt && openLightbox(matchedIt)}
+                                  className="w-10 h-10 rounded-lg object-cover flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity border border-slate-100" />
+                              )}
+                              <div className="min-w-0">
+                                <button onClick={() => matchedIt && openLightbox(matchedIt)}
+                                  className="block text-left truncate font-medium text-slate-700 hover:text-primary-600 transition-colors max-w-[120px]"
+                                  disabled={!matchedIt}>{r.name}</button>
+                                <span className="text-slate-400 text-[10px]">{r.color} / {r.size}</span>
+                              </div>
+                            </div>
                           </td>
                           <td className="px-3 py-1.5 text-center text-slate-600">{r.requestedQty}장</td>
                           <td className="px-3 py-1.5 text-center text-slate-500">{r.availableQty}장</td>
@@ -1213,7 +1333,8 @@ function InvoiceModal({
                             {r.status === 'notfound' && <span className="text-red-500">찾지 못함 — 직접 선택</span>}
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1238,6 +1359,7 @@ function InvoiceModal({
                     const allSel      = g.items.every((it) => selectedIds.has(it.itemId));
                     const someSel     = selInGroup.length > 0 && !allSel;
                     const isGrpOpen   = openGroups.has(g.key);
+                    const grpThumb    = thumbSrc(g.items[0]);
                     return (
                       <Fragment key={g.key}>
                         <div className={`flex items-center gap-2 px-3 py-2 ${selQty > 0 ? 'bg-emerald-50/50' : 'hover:bg-slate-50'}`}>
@@ -1245,8 +1367,15 @@ function InvoiceModal({
                             ref={(el) => { if (el) el.indeterminate = someSel; }}
                             onChange={() => toggleGroup(g)}
                             className="w-3.5 h-3.5 accent-emerald-600 flex-shrink-0" />
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={grpThumb} alt="" loading="lazy"
+                            onClick={() => openLightbox(g.items[0])}
+                            className="w-10 h-10 rounded-lg object-cover flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity border border-slate-100" />
                           <div className="flex-1 min-w-0">
-                            <span className="text-xs font-semibold text-slate-800 truncate block">{g.productName}</span>
+                            <button onClick={() => openLightbox(g.items[0])}
+                              className="text-xs font-semibold text-slate-800 truncate block text-left hover:text-primary-600 transition-colors max-w-full">
+                              {g.productName}
+                            </button>
                             <span className="text-xs text-slate-400">{g.color} / {g.size}</span>
                           </div>
                           <span className="text-xs text-slate-400 flex-shrink-0">대기 {g.totalQty}장</span>
@@ -1329,6 +1458,9 @@ function InvoiceModal({
           </div>
         )}
       </div>
+
+      {/* 라이트박스 — 모달 위에 z-[60]으로 띄움, 모달 상태 유지 */}
+      {lightbox && <InvoiceLightbox item={lightbox} onClose={() => setLightbox(null)} />}
     </div>
   );
 }

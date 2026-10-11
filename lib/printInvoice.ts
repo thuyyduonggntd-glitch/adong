@@ -189,13 +189,29 @@ ${bodyHtml}
 
 export function printInvoiceItems(config: Parameters<typeof buildPrintHtml>[0]): void {
   const html = buildPrintHtml(config);
-  const win = window.open('', '_blank');
+  // Blob URL을 사용해 새 탭에서 안정적으로 로드 후 인쇄
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const win  = window.open(url, '_blank');
   if (!win) {
-    alert('팝업이 차단되어 있습니다. 팝업을 허용한 후 다시 시도해주세요.');
+    URL.revokeObjectURL(url);
+    alert('팝업이 차단되어 있습니다. 브라우저 팝업 허용 후 다시 시도해주세요.');
     return;
   }
-  win.document.write(html);
-  win.document.close();
-  // 이미지 로드 후 인쇄 (최대 1.5초 대기)
-  setTimeout(() => { win.focus(); win.print(); }, 1200);
+  // 페이지 + 이미지 로드 대기 후 인쇄 트리거
+  win.addEventListener('load', () => {
+    setTimeout(() => {
+      win.focus();
+      win.print();
+      URL.revokeObjectURL(url);
+    }, 600);
+  });
+  // 로드 이벤트가 이미 발생했을 경우를 위한 폴백
+  setTimeout(() => {
+    if (!win.closed) {
+      win.focus();
+      win.print();
+      URL.revokeObjectURL(url);
+    }
+  }, 2000);
 }

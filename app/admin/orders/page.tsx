@@ -1025,8 +1025,9 @@ function InvoiceLightbox({ item, onClose }: { item: LightboxItem; onClose: () =>
   });
 
   return (
+    // stopPropagation: 라이트박스 backdrop 클릭이 invoice modal backdrop(z-50)으로 버블링되지 않도록
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80"
-      onClick={onClose}
+      onClick={(e) => { e.stopPropagation(); onClose(); }}
       onTouchStart={(e) => { touchStartX.current = e.touches[0].clientX; }}
       onTouchEnd={(e) => {
         if (touchStartX.current === null) return;
@@ -1037,9 +1038,9 @@ function InvoiceLightbox({ item, onClose }: { item: LightboxItem; onClose: () =>
       <div className="relative w-full max-w-lg mx-4 flex flex-col items-center gap-3"
         onClick={(e) => e.stopPropagation()}>
 
-        {/* 닫기 */}
+        {/* 닫기 버튼 — 내용 박스 안 상단 우측 */}
         <button onClick={onClose}
-          className="absolute -top-10 right-0 text-white/80 hover:text-white text-3xl leading-none z-10">×</button>
+          className="absolute -top-10 right-0 text-white/80 hover:text-white text-3xl leading-none z-10 w-10 h-10 flex items-center justify-center">×</button>
 
         {/* 메인 이미지 */}
         <div className="relative w-full aspect-square bg-black rounded-xl overflow-hidden">
@@ -1105,6 +1106,24 @@ function InvoiceModal({
   const [saving, setSaving]               = useState(false);
   const [saveError, setSaveError]         = useState('');
   const [lightbox, setLightbox]           = useState<LightboxItem | null>(null);
+  const [confirmClose, setConfirmClose]   = useState(false);
+
+  const isDirty = totalQtyInput !== '' || ocrText !== '' || selectedIds.size > 0 || receiptNumber !== '';
+
+  const handleClose = useCallback(() => {
+    if (isDirty) setConfirmClose(true);
+    else onClose();
+  }, [isDirty, onClose]);
+
+  // Esc: 라이트박스 열려있으면 무시 (라이트박스가 직접 처리), 닫혀있으면 모달 닫기
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || lightbox) return;
+      handleClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [lightbox, handleClose]);
 
   useEffect(() => {
     setDataLoading(true);
@@ -1223,7 +1242,7 @@ function InvoiceModal({
     resolveColorImage(it.color, it.colorImages, it.images, '/no-image.svg');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4" onClick={handleClose}>
       <div className="bg-white w-full sm:rounded-2xl sm:max-w-2xl sm:mx-4 shadow-2xl flex flex-col"
         style={{ maxHeight: '92vh' }} onClick={(e) => e.stopPropagation()}>
 
@@ -1233,7 +1252,7 @@ function InvoiceModal({
             <h2 className="text-base font-bold text-slate-800">{brand} 영수증 대조</h2>
             <p className="text-xs text-slate-400 mt-0.5">확인 대기 {groups.length}종 · {items.reduce((s, it) => s + it.quantity, 0)}장</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl leading-none w-8 h-8 flex items-center justify-center">×</button>
+          <button onClick={handleClose} className="text-slate-400 hover:text-slate-600 text-2xl leading-none w-8 h-8 flex items-center justify-center">×</button>
         </div>
 
         {/* 탭 */}
@@ -1450,7 +1469,7 @@ function InvoiceModal({
         {/* 푸터 */}
         {modalTab === '대조' && !dataLoading && (
           <div className="flex items-center justify-between gap-3 px-5 py-4 border-t border-slate-100 flex-shrink-0">
-            <button onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700">취소</button>
+            <button onClick={handleClose} className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700">취소</button>
             <button onClick={handleSave} disabled={saving || selectedIds.size === 0 || !qtyValid}
               className="px-5 py-2 text-sm font-semibold bg-emerald-600 text-white rounded-lg disabled:opacity-40 hover:bg-emerald-700 transition-colors">
               {saving ? '처리 중...' : `입고 처리 (${checkedQty}장)`}
@@ -1458,6 +1477,23 @@ function InvoiceModal({
           </div>
         )}
       </div>
+
+      {/* 닫기 확인 다이얼로그 — 입력 데이터가 있을 때만 표시 */}
+      {confirmClose && (
+        <div className="absolute inset-0 z-[55] flex items-center justify-center bg-black/40 rounded-2xl"
+          onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-xl p-6 mx-4 max-w-xs w-full shadow-2xl">
+            <p className="text-sm font-semibold text-slate-800 mb-1">작성 중인 내용이 있습니다</p>
+            <p className="text-sm text-slate-500 mb-5">입력한 내용이 사라집니다. 닫으시겠습니까?</p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirmClose(false)}
+                className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 font-medium">계속 작성</button>
+              <button onClick={onClose}
+                className="px-4 py-2 text-sm font-semibold bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors">닫기</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 라이트박스 — 모달 위에 z-[60]으로 띄움, 모달 상태 유지 */}
       {lightbox && <InvoiceLightbox item={lightbox} onClose={() => setLightbox(null)} />}

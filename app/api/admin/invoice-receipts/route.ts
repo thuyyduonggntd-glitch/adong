@@ -31,8 +31,14 @@ export async function GET(req: NextRequest) {
         include: {
           orderItem: {
             select: {
-              size: true, color: true, quantity: true,
-              product: { select: { name: true } },
+              id: true, size: true, color: true, quantity: true,
+              product: {
+                select: {
+                  id: true, name: true, brand: true, images: true,
+                  colorImages: { select: { color: true, imageUrl: true }, orderBy: { sequence: 'asc' } },
+                },
+              },
+              order: { select: { createdAt: true, user: { select: { name: true } } } },
             },
           },
         },

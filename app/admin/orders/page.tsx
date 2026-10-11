@@ -3,6 +3,7 @@ import { Fragment, useEffect, useState, useMemo, useCallback, useRef } from 'rea
 import Image from 'next/image';
 import { formatPrice, formatDate } from '@/lib/utils';
 import { printInboundRows, type InboundPrintRow } from '@/lib/printInbound';
+import { printInvoiceItems, type PrintableItem } from '@/lib/printInvoice';
 import EditPriceModal from '@/components/admin/EditPriceModal';
 import BrandPriceModal, { type BrandModalRow } from '@/components/admin/BrandPriceModal';
 import { resolveColorImage } from '@/lib/productImages';
@@ -988,8 +989,41 @@ type InvoiceReceiptHistory = {
   id: string; brand: string; totalQty: number; checkedQty: number;
   receiptNumber: string | null; imageUrl: string | null; rawText: string | null;
   createdAt: string;
-  items: Array<{ id: string; orderItemId: string; confirmedAt: string | null }>;
+  items: Array<{
+    id: string; orderItemId: string; confirmedAt: string | null;
+    orderItem?: {
+      id: string; size: string | null; color: string | null; quantity: number;
+      product?: { id: string; name: string; brand: string | null; images: string[]; colorImages: { color: string; imageUrl: string }[] } | null;
+      order?: { createdAt: string; user: { name: string } } | null;
+    } | null;
+  }>;
 };
+
+// ── 인쇄 정렬 방식 선택 ────────────────────────────────────────────────────────
+function SortPickerDialog({ onConfirm, onCancel }: {
+  onConfirm: (sortBy: 'product' | 'member') => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50"
+      onClick={onCancel}>
+      <div className="bg-white rounded-xl p-6 mx-4 max-w-xs w-full shadow-2xl"
+        onClick={(e) => e.stopPropagation()}>
+        <p className="text-sm font-semibold text-slate-800 mb-4">정렬 방식을 선택하세요</p>
+        <div className="flex gap-3">
+          {([['product', '상품별', '상품·컬러·사이즈 기준'], ['member', '회원별', '아이디 기준']] as const).map(([v, label, desc]) => (
+            <button key={v} onClick={() => onConfirm(v)}
+              className="flex-1 py-4 border-2 border-slate-200 rounded-xl text-sm font-medium hover:border-emerald-500 hover:bg-emerald-50 transition-colors text-center">
+              <div className="font-semibold">{label}</div>
+              <div className="text-xs text-slate-400 mt-1">{desc}</div>
+            </button>
+          ))}
+        </div>
+        <button onClick={onCancel} className="mt-4 w-full text-sm text-slate-400 hover:text-slate-600 py-2">취소</button>
+      </div>
+    </div>
+  );
+}
 
 // ── 이미지 lightbox (영수증 대조 모달 내부용) ────────────────────────────────
 type LightboxItem = {
@@ -1107,8 +1141,48 @@ function InvoiceModal({
   const [saveError, setSaveError]         = useState('');
   const [lightbox, setLightbox]           = useState<LightboxItem | null>(null);
   const [confirmClose, setConfirmClose]   = useState(false);
+  const [printPending, setPrintPending]   = useState<'selected' | string | null>(null); // 'selected'=현재선택, receiptId=이력
 
   const isDirty = totalQtyInput !== '' || ocrText !== '' || selectedIds.size > 0 || receiptNumber !== '';
+
+  // 현재 선택된 항목 → PrintableItem 변환
+  const selectedPrintItems = useMemo((): PrintableItem[] =>
+    items.filter((it) => selectedIds.has(it.itemId)).map((it) => ({
+      itemId: it.itemId, productId: it.productId, brand: it.brand,
+      productName: it.productName, color: it.color, size: it.size,
+      quantity: it.quantity, images: it.images, colorImages: it.colorImages,
+      userName: it.userName, orderDate: it.orderDate,
+    })), [items, selectedIds]);
+
+  // 이력 영수증 항목 → PrintableItem 변환
+  const historyReceiptPrintItems = useCallback((r: InvoiceReceiptHistory): PrintableItem[] =>
+    r.items.flatMap((hi) => {
+      if (!hi.orderItem?.product) return [];
+      return [{
+        itemId: hi.orderItemId,
+        productId: hi.orderItem.product.id,
+        brand: hi.orderItem.product.brand ?? r.brand,
+        productName: hi.orderItem.product.name,
+        color: hi.orderItem.color ?? '',
+        size: hi.orderItem.size ?? '',
+        quantity: hi.orderItem.quantity,
+        images: hi.orderItem.product.images,
+        colorImages: hi.orderItem.product.colorImages,
+        userName: hi.orderItem.order?.user.name ?? '',
+        orderDate: hi.orderItem.order?.createdAt ?? '',
+      }];
+    }), []);
+
+  const handlePrintConfirm = useCallback((sortBy: 'product' | 'member') => {
+    if (!printPending) { setPrintPending(null); return; }
+    if (printPending === 'selected') {
+      printInvoiceItems({ title: `${brand} 입고 대조`, receiptNumber: receiptNumber || null, sortBy, items: selectedPrintItems });
+    } else {
+      const r = history.find((h) => h.id === printPending);
+      if (r) printInvoiceItems({ title: `${brand} 영수증 대조 이력`, receiptNumber: r.receiptNumber, sortBy, items: historyReceiptPrintItems(r) });
+    }
+    setPrintPending(null);
+  }, [printPending, brand, receiptNumber, selectedPrintItems, history, historyReceiptPrintItems]);
 
   const handleClose = useCallback(() => {
     if (isDirty) setConfirmClose(true);
@@ -1359,12 +1433,18 @@ function InvoiceModal({
                 </div>
               )}
 
-              {/* 선택 수량 표시 */}
+              {/* 선택 수량 표시 + 인쇄 */}
               <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-sm">
                 <span className="text-slate-500">선택:</span>
                 <span className={`font-bold ${qtyMismatch ? 'text-orange-600' : 'text-emerald-600'}`}>{checkedQty}장</span>
                 {qtyValid && <span className="text-slate-400">/ 영수증 {totalQty}장</span>}
-                {qtyMismatch && <span className="text-xs text-orange-500 ml-auto">수량이 다릅니다 ({checkedQty - totalQty > 0 ? '+' : ''}{checkedQty - totalQty}장)</span>}
+                {qtyMismatch && <span className="text-xs text-orange-500">수량이 다릅니다 ({checkedQty - totalQty > 0 ? '+' : ''}{checkedQty - totalQty}장)</span>}
+                {selectedIds.size > 0 && (
+                  <button onClick={() => setPrintPending('selected')}
+                    className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-slate-700 text-white font-medium hover:bg-slate-800 transition-colors">
+                    인쇄
+                  </button>
+                )}
               </div>
 
               {/* 그룹별 항목 목록 */}
@@ -1446,9 +1526,15 @@ function InvoiceModal({
                           <span className="text-sm font-semibold text-slate-800">{fmtDt(r.createdAt)}</span>
                           {r.receiptNumber && <span className="ml-2 text-xs font-mono bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{r.receiptNumber}</span>}
                         </div>
-                        <div className="text-right text-xs text-slate-500">
-                          영수증 {r.totalQty}장 / 처리 {r.checkedQty}장
-                          {r.totalQty !== r.checkedQty && <span className="ml-1 text-orange-500">({r.totalQty - r.checkedQty}장 미처리)</span>}
+                        <div className="flex items-center gap-2">
+                          <div className="text-right text-xs text-slate-500">
+                            영수증 {r.totalQty}장 / 처리 {r.checkedQty}장
+                            {r.totalQty !== r.checkedQty && <span className="ml-1 text-orange-500">({r.totalQty - r.checkedQty}장 미처리)</span>}
+                          </div>
+                          <button onClick={() => setPrintPending(r.id)}
+                            className="text-xs px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 font-medium hover:bg-slate-200 transition-colors flex-shrink-0">
+                            인쇄
+                          </button>
                         </div>
                       </div>
                       <p className="text-xs text-slate-400">{r.items.length}건 입고 처리됨</p>
@@ -1477,6 +1563,9 @@ function InvoiceModal({
           </div>
         )}
       </div>
+
+      {/* 인쇄 정렬 선택 */}
+      {printPending && <SortPickerDialog onConfirm={handlePrintConfirm} onCancel={() => setPrintPending(null)} />}
 
       {/* 닫기 확인 다이얼로그 — 입력 데이터가 있을 때만 표시 */}
       {confirmClose && (
@@ -2021,6 +2110,20 @@ export default function AdminOrdersPage() {
     printInboundRows(filteredTodayInboundRows, `일별입고 - ${new Date().toLocaleDateString('ko-KR')}`);
   };
 
+  const [dailyPrintPicker, setDailyPrintPicker] = useState(false);
+  const handleDailyInvoicePrint = useCallback((sortBy: 'product' | 'member') => {
+    setDailyPrintPicker(false);
+    const today = new Date().toLocaleDateString('ko-KR');
+    const printItems: PrintableItem[] = filteredTodayArrivedItems.map((it) => ({
+      itemId: it.id, productId: it.product.id, brand: it.product.brand || '-',
+      productName: it.product.name, color: it.color || '', size: it.size || '',
+      quantity: it.quantity, images: it.product.images,
+      colorImages: it.product.colorImages ?? [],
+      userName: it.order.user.name, orderDate: it.order.createdAt,
+    }));
+    printInvoiceItems({ title: `오늘 입고 전체 (${today})`, sortBy, items: printItems, mallMap: brandMallMap });
+  }, [filteredTodayArrivedItems, brandMallMap]);
+
   /* ── 입고 상품 금액/세일율 수정 (단건 + 브랜드 일괄) ── */
   const [editModal, setEditModal] = useState<{ source: 'order' | 'supplier'; id: string; title: string; price: number } | null>(null);
   const [brandModal, setBrandModal] = useState<{ brand: string; rows: BrandModalRow[] } | null>(null);
@@ -2448,9 +2551,15 @@ export default function AdminOrdersPage() {
                   <button onClick={() => { setDailyIdFilter(''); setDailyBrandFilter(''); }} className="text-xs text-slate-500 hover:text-slate-700">초기화</button>
                 )}
                 <span className="text-xs text-slate-400">{filteredTodayInboundRows.length}건 표시 중</span>
-                <button onClick={handleDailyPrint} className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 text-white font-medium hover:bg-slate-800 transition-colors ml-auto">
-                  🖨 인쇄
-                </button>
+                <div className="flex gap-2 ml-auto">
+                  <button onClick={handleDailyPrint} className="text-xs px-3 py-1.5 rounded-lg bg-slate-500 text-white font-medium hover:bg-slate-600 transition-colors">
+                    🖨 기존 인쇄
+                  </button>
+                  <button onClick={() => setDailyPrintPicker(true)} disabled={filteredTodayArrivedItems.length === 0}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 text-white font-medium hover:bg-slate-800 transition-colors disabled:opacity-40">
+                    오늘 입고 전체 인쇄
+                  </button>
+                </div>
               </div>
 
               {filteredTodayArrivedItems.length > 0 && (
@@ -2917,6 +3026,11 @@ export default function AdminOrdersPage() {
           onSave={handleSaveBrandChanges}
           onClose={() => setBrandModal(null)}
         />
+      )}
+
+      {/* ── 일별입고 인쇄 정렬 선택 ── */}
+      {dailyPrintPicker && (
+        <SortPickerDialog onConfirm={handleDailyInvoicePrint} onCancel={() => setDailyPrintPicker(false)} />
       )}
     </div>
   );

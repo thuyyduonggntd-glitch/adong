@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { hasOrdersAccess } from '@/lib/adminAccess';
@@ -157,38 +158,36 @@ export async function GET(req: NextRequest) {
     })));
   }
 
-  // ── summary (쇼핑몰별 뷰 헤더용) ───────────────────────────────────────────
-  const where = buildWhere(batch, 'waiting');
-  const items = await prisma.orderItem.findMany({
-    where,
-    select: {
-      id: true, quantity: true, size: true, color: true, orderBatchId: true,
-      product: { select: { id: true, brand: true } },
-    },
-  });
+  // ── summary (쇼핑몰별 뷰 헤더용) — raw SQL GROUP BY, 전체 item 전송 없이 집계 ──
+  const batchClause = batch && batch !== 'all'
+    ? Prisma.sql`AND oi."orderBatchId" = ${batch}`
+    : Prisma.empty;
 
-  // brand → mall map from Brand table
-  const brandRows = await prisma.brand.findMany({ select: { name: true, mallLocation: true } });
-  const mallMap: Record<string, string> = {};
-  brandRows.forEach((b) => { if (b.mallLocation) mallMap[b.name] = b.mallLocation; });
+  const summaryRows = await prisma.$queryRaw<Array<{
+    brand: string; mall: string | null; distinctCount: bigint; totalQty: bigint;
+  }>>`
+    SELECT
+      p.brand,
+      b."mallLocation"                                             AS mall,
+      COUNT(DISTINCT (oi."productId" || '|' || oi.color || '|' || oi.size)) AS "distinctCount",
+      SUM(oi.quantity)                                             AS "totalQty"
+    FROM   "OrderItem" oi
+    JOIN   "Product"   p  ON p.id   = oi."productId"
+    LEFT JOIN "Brand"  b  ON b.name = p.brand
+    WHERE  oi."confirmedAt"  IS NOT NULL
+      AND  oi."arrivedAt"    IS NULL
+      AND  oi."cancelledAt"  IS NULL
+      AND  oi."outOfStockAt" IS NULL
+      AND  oi."unshippedAt"  IS NULL
+      ${batchClause}
+    GROUP  BY p.brand, b."mallLocation"
+    ORDER  BY COALESCE(b."mallLocation", 'ㅎ') ASC, p.brand ASC
+  `;
 
-  // aggregate per brand
-  const byBrand = new Map<string, { mall: string; distinctKeys: Set<string>; totalQty: number }>();
-  for (const it of items) {
-    const b = it.product?.brand ?? '';
-    if (!b) continue;
-    if (!byBrand.has(b)) byBrand.set(b, { mall: mallMap[b] ?? '', distinctKeys: new Set(), totalQty: 0 });
-    const entry = byBrand.get(b)!;
-    entry.distinctKeys.add(`${it.product?.id}::${it.color}::${it.size}`);
-    entry.totalQty += it.quantity;
-  }
-
-  const summary = Array.from(byBrand.entries()).map(([brand, d]) => ({
-    brand,
-    mall: d.mall,
-    distinctCount: d.distinctKeys.size,
-    totalQty: d.totalQty,
-  })).sort((a, b) => (a.mall || 'ㅎ').localeCompare(b.mall || 'ㅎ', 'ko') || a.brand.localeCompare(b.brand, 'ko'));
-
-  return NextResponse.json(summary);
+  return NextResponse.json(summaryRows.map((r) => ({
+    brand:         r.brand ?? '',
+    mall:          r.mall  ?? '',
+    distinctCount: Number(r.distinctCount),
+    totalQty:      Number(r.totalQty),
+  })));
 }

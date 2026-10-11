@@ -115,10 +115,9 @@ export default function AdminSidebar() {
 
   const visibleGroups = MENU_GROUPS
     .map((group) => {
-      if (!isSubAdmin) return group; // ADMIN sees all
-      // SUB_ADMIN: hide admin-only groups
+      if (role === 'ADMIN') return group;
+      if (role !== 'SUB_ADMIN') return null; // loading / unknown role
       if (group.zone === 'admin' || group.zone === 'settings') return null;
-      // SUB_ADMIN: show zone-based groups only if they have the zone
       if (!adminZones.includes(group.zone)) return null;
       return group;
     })

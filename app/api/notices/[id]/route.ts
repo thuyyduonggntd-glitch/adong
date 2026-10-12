@@ -10,11 +10,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!session || !hasNoticeFaqAccess((session.user as any)?.role, (session.user as any)?.adminZones))
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
-  const { title, content, isActive } = await req.json();
+  const { title, content, isActive, scheduledAt, expiresAt } = await req.json();
   const data: any = {};
-  if (title     !== undefined) data.title     = title.trim();
-  if (content   !== undefined) data.content   = content.trim();
-  if (isActive  !== undefined) data.isActive  = Boolean(isActive);
+  if (title      !== undefined) data.title      = title.trim();
+  if (content    !== undefined) data.content    = content.trim();
+  if (isActive   !== undefined) data.isActive   = Boolean(isActive);
+  if (scheduledAt !== undefined) data.scheduledAt = scheduledAt ? new Date(scheduledAt) : null;
+  if (expiresAt   !== undefined) data.expiresAt  = expiresAt   ? new Date(expiresAt)   : null;
 
   try {
     const notice = await prisma.notice.update({ where: { id: params.id }, data });

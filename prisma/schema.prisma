@@ -447,6 +447,15 @@ model Notice {
   content_es      String?  @db.Text
   translatedAt    DateTime?
 
+  // 수신 대상 설정
+  recipientType      String   @default("all")   // "all" | "selected" | "country"
+  recipientIds       String[] @default([])       // 대상 user ID 목록 (selected + country 스냅샷)
+  recipientCountries String[] @default([])       // 국가별 선택 시 선택된 국가 목록 (표시용)
+
+  // 노출 일정
+  scheduledAt        DateTime?   // 노출 시작 일시 (null = 즉시)
+  expiresAt          DateTime?   // 노출 종료 일시 (null = 무제한)
+
   seenBy          NoticeSeen[]
 }
 
